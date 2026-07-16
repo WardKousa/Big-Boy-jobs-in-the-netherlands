@@ -1,0 +1,127 @@
+# Target companies mapped to their hiring platform (ATS).
+# Discovered via scripts/discover_companies.py + scripts/discover_workday.py.
+#
+# To add a company: figure out which ATS it uses (open its careers page,
+# check the network tab) and add an entry. Re-run the discovery scripts to
+# auto-detect new slugs. Supported ats values:
+#   greenhouse | lever | ashby | smartrecruiters | recruitee | workday
+
+companies:
+  - name: "Adyen"
+    ats: greenhouse
+    slug: adyen
+  - name: "Block (Square)"
+    ats: greenhouse
+    slug: block
+  - name: "Bunq"
+    ats: recruitee
+    slug: bunq
+  - name: "ClickHouse"
+    ats: greenhouse
+    slug: clickhouse
+  - name: "Cloudflare"
+    ats: greenhouse
+    slug: cloudflare
+  - name: "Da Vinci Derivatives"
+    ats: greenhouse
+    slug: davinciderivatives
+  - name: "Databricks"
+    ats: greenhouse
+    slug: databricks
+  - name: "Elastic"
+    ats: greenhouse
+    slug: elastic
+  - name: "Fivetran"
+    ats: greenhouse
+    slug: fivetran
+  - name: "Flexport"
+    ats: greenhouse
+    slug: flexport
+  - name: "Flow Traders"
+    ats: greenhouse
+    slug: flowtraders
+  - name: "GitLab"
+    ats: greenhouse
+    slug: gitlab
+  - name: "IMC Trading"
+    ats: greenhouse
+    slug: imc
+  - name: "JetBrains"
+    ats: greenhouse
+    slug: jetbrains
+  - name: "Jump Trading"
+    ats: greenhouse
+    slug: jumptrading
+  - name: "KPN"
+    ats: smartrecruiters
+    slug: kpn
+  - name: "Lemonade"
+    ats: ashby
+    slug: lemonade
+  - name: "MessageBird (Bird)"
+    ats: greenhouse
+    slug: bird
+  - name: "Miro"
+    ats: ashby
+    slug: miro
+  - name: "Mollie"
+    ats: ashby
+    slug: mollie
+  - name: "Navan"
+    ats: greenhouse
+    slug: tripactions
+  - name: "Nebius"
+    ats: greenhouse
+    slug: nebius
+  - name: "Plain"
+    ats: ashby
+    slug: plain
+  - name: "Radix Trading"
+    ats: recruitee
+    slug: radix
+  - name: "Reddit"
+    ats: greenhouse
+    slug: reddit
+  - name: "Roblox"
+    ats: greenhouse
+    slug: roblox
+  - name: "Roku"
+    ats: greenhouse
+    slug: roku
+  - name: "ServiceNow"
+    ats: smartrecruiters
+    slug: servicenow
+  - name: "Snowflake"
+    ats: ashby
+    slug: snowflake
+  - name: "Spotify"
+    ats: lever
+    slug: spotify
+  - name: "Stripe"
+    ats: greenhouse
+    slug: stripe
+  - name: "Thales"
+    ats: smartrecruiters
+    slug: thales
+  - name: "Webb Traders"
+    ats: recruitee
+    slug: webbtraders
+  - name: "NXP Semiconductors"
+    ats: workday
+    tenant: nxp
+    wd: wd3
+    site: Careers
+
+# --------------------------------------------------------------------------
+# BACKLOG: companies on your list that use a custom / non-public career system.
+# These need a bespoke adapter or a Workday tenant we haven't cracked yet.
+# Contributions welcome -- add them above once you find the endpoint.
+#
+#   Custom systems (hard): Google, Meta, Amazon (AWS), Apple, Microsoft,
+#     Netflix, Uber, Booking.com, Optiver, Nvidia, Qualcomm, Tesla, Snap
+#   Likely Workday (unknown site name): ASML, Philips, eBay, Adidas, Shell,
+#     TomTom, Workiva, IBM, ABB, Atlassian, Backbase, Arcadis, IKEA
+#   Dutch banks (Eightfold/custom): ING, ABN AMRO, Rabobank
+#   Other: Just Eat Takeaway, Maverick Derivatives, All Options, Huawei,
+#     Ortec, CloudKitchens, SurePrep
+# --------------------------------------------------------------------------

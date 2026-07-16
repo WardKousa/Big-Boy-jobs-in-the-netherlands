@@ -1,0 +1,60 @@
+# What counts as a match, and where you get notified.
+
+filters:
+  # A job matches if its title contains ANY of these (case-insensitive).
+  # Tuned for a data / AI / ML new-grad. Edit freely.
+  include_keywords:
+    - data scientist
+    - data engineer
+    - machine learning
+    - ml engineer
+    - "ai engineer"
+    - artificial intelligence
+    - analytics engineer
+    - data analyst
+    - research scientist
+    - quant
+    - deep learning
+    - mlops
+    - data platform
+
+  # Drop a job if its title contains ANY of these (seniority filter).
+  # Comment out the list to keep all seniorities.
+  exclude_keywords:
+    - senior
+    - staff
+    - principal
+    - lead
+    - head of
+    - director
+    - manager
+    - vp
+    - "vice president"
+
+  # A job matches only if its location contains ANY of these
+  # (case-insensitive). Leave empty [] to accept every location.
+  locations:
+    - netherlands
+    - amsterdam
+    - rotterdam
+    - eindhoven
+    - utrecht
+    - the hague
+    - den haag
+    - hilversum
+    - nijmegen
+    # Note: bare "remote" is intentionally omitted -- it would match
+    # "Remote - United States". NL-remote roles still match because their
+    # location reads "Remote - The Netherlands" (caught by "netherlands").
+
+notifications:
+  # Channel: console | telegram | email  (console needs no setup)
+  channel: console
+
+  telegram:
+    # Set via env vars TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (do not hardcode).
+    enabled: false
+
+  email:
+    # Set via env vars SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_TO.
+    enabled: false
