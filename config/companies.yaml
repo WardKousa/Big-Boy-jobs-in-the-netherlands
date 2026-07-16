@@ -1,127 +1,214 @@
 # Target companies mapped to their hiring platform (ATS).
-# Discovered via scripts/discover_companies.py + scripts/discover_workday.py.
+# tier = prestige/priority from your wishlist (S++ highest). Used to sort alerts
+# so the best opportunities appear first.
 #
-# To add a company: figure out which ATS it uses (open its careers page,
-# check the network tab) and add an entry. Re-run the discovery scripts to
-# auto-detect new slugs. Supported ats values:
+# Supported ats values:
 #   greenhouse | lever | ashby | smartrecruiters | recruitee | workday
+#   | amazon | atlassian | snap | eightfold
 
 companies:
-  - name: "Adyen"
-    ats: greenhouse
-    slug: adyen
-  - name: "Block (Square)"
-    ats: greenhouse
-    slug: block
-  - name: "Bunq"
-    ats: recruitee
-    slug: bunq
-  - name: "ClickHouse"
-    ats: greenhouse
-    slug: clickhouse
-  - name: "Cloudflare"
-    ats: greenhouse
-    slug: cloudflare
-  - name: "Da Vinci Derivatives"
-    ats: greenhouse
-    slug: davinciderivatives
-  - name: "Databricks"
-    ats: greenhouse
-    slug: databricks
-  - name: "Elastic"
-    ats: greenhouse
-    slug: elastic
-  - name: "Fivetran"
-    ats: greenhouse
-    slug: fivetran
-  - name: "Flexport"
-    ats: greenhouse
-    slug: flexport
-  - name: "Flow Traders"
-    ats: greenhouse
-    slug: flowtraders
-  - name: "GitLab"
-    ats: greenhouse
-    slug: gitlab
-  - name: "IMC Trading"
-    ats: greenhouse
-    slug: imc
-  - name: "JetBrains"
-    ats: greenhouse
-    slug: jetbrains
+  # ---- quant trading ----
   - name: "Jump Trading"
     ats: greenhouse
     slug: jumptrading
-  - name: "KPN"
-    ats: smartrecruiters
-    slug: kpn
-  - name: "Lemonade"
-    ats: ashby
-    slug: lemonade
-  - name: "MessageBird (Bird)"
+    tier: "S++"
+  - name: "IMC Trading"
     ats: greenhouse
-    slug: bird
-  - name: "Miro"
-    ats: ashby
-    slug: miro
-  - name: "Mollie"
-    ats: ashby
-    slug: mollie
-  - name: "Navan"
-    ats: greenhouse
-    slug: tripactions
-  - name: "Nebius"
-    ats: greenhouse
-    slug: nebius
-  - name: "Plain"
-    ats: ashby
-    slug: plain
+    slug: imc
+    tier: "S+"
   - name: "Radix Trading"
     ats: recruitee
     slug: radix
-  - name: "Reddit"
+    tier: "S+"
+  - name: "Da Vinci Derivatives"
     ats: greenhouse
-    slug: reddit
-  - name: "Roblox"
+    slug: davinciderivatives
+    tier: "S"
+  - name: "Flow Traders"
     ats: greenhouse
-    slug: roblox
-  - name: "Roku"
-    ats: greenhouse
-    slug: roku
-  - name: "ServiceNow"
-    ats: smartrecruiters
-    slug: servicenow
-  - name: "Snowflake"
-    ats: ashby
-    slug: snowflake
-  - name: "Spotify"
-    ats: lever
-    slug: spotify
-  - name: "Stripe"
-    ats: greenhouse
-    slug: stripe
-  - name: "Thales"
-    ats: smartrecruiters
-    slug: thales
+    slug: flowtraders
+    tier: "S"
   - name: "Webb Traders"
     ats: recruitee
     slug: webbtraders
+    tier: "A+"
+
+  # ---- big tech / AI ----
+  - name: "Netflix"
+    ats: eightfold
+    host: netflix.eightfold.ai
+    domain: netflix.com
+    portal: explore.jobs.netflix.net
+    tier: "S+"
+  - name: "Nvidia"
+    ats: workday
+    tenant: nvidia
+    wd: wd5
+    site: NVIDIAExternalCareerSite
+    tier: "S+"
+  - name: "Amazon (AWS)"
+    ats: amazon
+    tier: "S"
+  - name: "Atlassian"
+    ats: atlassian
+    tier: "S"
+  - name: "Snap"
+    ats: snap
+    tier: "S"
+  - name: "Databricks"
+    ats: greenhouse
+    slug: databricks
+    tier: "S+"
+
+  # ---- fintech / payments ----
+  - name: "Adyen"
+    ats: greenhouse
+    slug: adyen
+    tier: "S+"
+  - name: "Stripe"
+    ats: greenhouse
+    slug: stripe
+    tier: "S+"
+  - name: "Block (Square)"
+    ats: greenhouse
+    slug: block
+    tier: "S"
+  - name: "Mollie"
+    ats: ashby
+    slug: mollie
+    tier: "A+"
+  - name: "Bunq"
+    ats: recruitee
+    slug: bunq
+    tier: "A"
+
+  # ---- data / AI platforms ----
+  - name: "Snowflake"
+    ats: ashby
+    slug: snowflake
+    tier: "S+"
+  - name: "ClickHouse"
+    ats: greenhouse
+    slug: clickhouse
+    tier: "S"
+  - name: "Elastic"
+    ats: greenhouse
+    slug: elastic
+    tier: "S"
+  - name: "Cloudflare"
+    ats: greenhouse
+    slug: cloudflare
+    tier: "S"
+  - name: "Fivetran"
+    ats: greenhouse
+    slug: fivetran
+    tier: "A+"
+  - name: "Nebius"
+    ats: greenhouse
+    slug: nebius
+    tier: "A"
+
+  # ---- enterprise / SaaS / devtools ----
+  - name: "GitLab"
+    ats: greenhouse
+    slug: gitlab
+    tier: "S"
+  - name: "ServiceNow"
+    ats: smartrecruiters
+    slug: servicenow
+    tier: "S"
+  - name: "Spotify"
+    ats: lever
+    slug: spotify
+    tier: "S"
+  - name: "Reddit"
+    ats: greenhouse
+    slug: reddit
+    tier: "S"
+  - name: "Roblox"
+    ats: greenhouse
+    slug: roblox
+    tier: "S"
+  - name: "Roku"
+    ats: greenhouse
+    slug: roku
+    tier: "A+"
+  - name: "JetBrains"
+    ats: greenhouse
+    slug: jetbrains
+    tier: "A+"
+  - name: "Miro"
+    ats: ashby
+    slug: miro
+    tier: "A"
+  - name: "Navan"
+    ats: greenhouse
+    slug: tripactions
+    tier: "A"
+  - name: "Lemonade"
+    ats: ashby
+    slug: lemonade
+    tier: "A"
+  - name: "MessageBird (Bird)"
+    ats: greenhouse
+    slug: bird
+    tier: "A"
+  - name: "Plain"
+    ats: ashby
+    slug: plain
+    tier: "B"
+
+  # ---- semiconductors / hardware / logistics ----
+  - name: "eBay"
+    ats: workday
+    tenant: ebay
+    wd: wd5
+    site: apply
+    tier: "A+"
+  - name: "Philips"
+    ats: workday
+    tenant: philips
+    wd: wd3
+    site: jobs-and-careers
+    tier: "A"
   - name: "NXP Semiconductors"
     ats: workday
     tenant: nxp
     wd: wd3
     site: Careers
+    tier: "A+"
+  - name: "Flexport"
+    ats: greenhouse
+    slug: flexport
+    tier: "A+"
+
+  # ---- telecom / other ----
+  - name: "KPN"
+    ats: smartrecruiters
+    slug: kpn
+    tier: "B"
+  - name: "Thales"
+    ats: smartrecruiters
+    slug: thales
+    tier: "B"
 
 # --------------------------------------------------------------------------
-# BACKLOG: companies on your list that use a custom / non-public career system.
-# These need a bespoke adapter or a Workday tenant we haven't cracked yet.
-# Contributions welcome -- add them above once you find the endpoint.
+# BACKLOG: companies whose careers systems resist simple HTTP access.
+# Each needs a headless browser or reverse-engineered auth flow (out of scope
+# for this lightweight tracker). Status notes for a future push:
 #
-#   Custom systems (hard): Google, Meta, Amazon (AWS), Apple, Microsoft,
-#     Netflix, Uber, Booking.com, Optiver, Nvidia, Qualcomm, Tesla, Snap
-#   Likely Workday (unknown site name): ASML, Philips, eBay, Adidas, Shell,
-#     TomTom, Workiva, IBM, ABB, Atlassian, Backbase, Arcadis, IKEA
-#   Dutch banks (Eightfold/custom): ING, ABN AMRO, Rabobank
-#   Other: Just Eat Takeaway, Maverick Derivatives, All Options, Huawei,
-#     Ortec, CloudKitchens, SurePrep
+#   Optiver (S++)   - custom SPA, no public JSON found
+#   Google (S++)    - careers is a JS SPA; v3 API deprecated (404)
+#   Meta (S++)      - GraphQL POST needs signed doc_id
+#   Apple (S++)     - jobs.apple.com API returns 401 (needs CSRF/session)
+#   Microsoft (S+)  - gcsservices host unreachable from CI probe
+#   Uber (S)        - loadSearchJobsResults returns 403 (bot protection)
+#   Tesla (S)       - cua-api returns 403 (Akamai bot protection)
+#   ASML (S)        - Workday tenant/site not yet identified
+#   Qualcomm (S)    - Workday site name not yet identified (422)
+#   Booking.com (A+)- custom system; SmartRecruiters tenant empty
+#   Maverick Derivatives, All Options - endpoints not found
+#   Adidas, Shell, TomTom, IKEA, IBM, ABB, Arcadis, Backbase, Workiva,
+#     Huawei, Ortec, CloudKitchens, SurePrep, Just Eat Takeaway
+#   Dutch banks: ING, ABN AMRO, Rabobank (custom/Eightfold-style, unconfirmed)
 # --------------------------------------------------------------------------

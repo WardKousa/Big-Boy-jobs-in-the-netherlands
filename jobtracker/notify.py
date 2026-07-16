@@ -12,12 +12,25 @@ from email.mime.text import MIMEText
 
 MAX_ITEMS_PER_MESSAGE = 30
 
+# Priority order for sorting alerts (best first). Unknown tiers sort last.
+TIER_ORDER = {"S++": 0, "S+": 1, "S": 2, "A+": 3, "A": 4, "B": 5, "C": 6}
+
+
+def _tier_rank(job):
+    return TIER_ORDER.get(job.get("tier", ""), 99)
+
+
+def sort_by_priority(jobs):
+    """Best-tier first, then alphabetical by company."""
+    return sorted(jobs, key=lambda j: (_tier_rank(j), j.get("company", "")))
+
 
 def _format_lines(new_jobs):
     lines = []
-    for j in new_jobs:
+    for j in sort_by_priority(new_jobs):
         loc = f" — {j['location']}" if j.get("location") else ""
-        lines.append(f"• [{j['company']}] {j['title']}{loc}\n  {j['url']}")
+        tier = f"{j['tier']} · " if j.get("tier") else ""
+        lines.append(f"• [{tier}{j['company']}] {j['title']}{loc}\n  {j['url']}")
     return lines
 
 

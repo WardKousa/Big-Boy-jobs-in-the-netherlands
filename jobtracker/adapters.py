@@ -19,7 +19,13 @@ import urllib.error
 import urllib.request
 
 TIMEOUT = 20
-UA = "Mozilla/5.0 (compatible; job-tracker/1.0; +https://github.com)"
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+# Workday/Eightfold tenants can hold thousands of jobs. Results are newest-first,
+# so capping still catches anything newly posted between runs while bounding time.
+MAX_WORKDAY_PAGES = 60      # 60 * 20 = up to 1200 jobs per company
+MAX_EIGHTFOLD = 1000
 
 
 class FetchError(Exception):
@@ -120,9 +126,10 @@ def fetch_workday(cfg):
     tenant, wd, site = cfg["tenant"], cfg["wd"], cfg["site"]
     base = f"https://{tenant}.{wd}.myworkdayjobs.com"
     api = f"{base}/wday/cxs/{tenant}/{site}/jobs"
+    max_pages = cfg.get("max_pages", MAX_WORKDAY_PAGES)
     out = []
     offset = 0
-    while True:
+    for _ in range(max_pages):
         body = {"limit": 20, "offset": offset, "searchText": ""}
         data = _get_json(api, data=body, method="POST")
         postings = data.get("jobPostings", []) if isinstance(data, dict) else []
@@ -139,6 +146,78 @@ def fetch_workday(cfg):
     return out
 
 
+def fetch_amazon(cfg):
+    """amazon.jobs public search API, pre-filtered to the Netherlands."""
+    out = []
+    offset = 0
+    while True:
+        url = ("https://www.amazon.jobs/en/search.json?"
+               "normalized_country_code%5B%5D=NLD&sort=recent"
+               f"&result_limit=100&offset={offset}")
+        data = _get_json(url)
+        jobs = data.get("jobs", []) if isinstance(data, dict) else []
+        for j in jobs:
+            job_url = "https://www.amazon.jobs" + (j.get("job_path") or "")
+            out.append(_norm(j.get("id_icims") or j.get("id"),
+                             j.get("title"), j.get("location"), job_url))
+        hits = data.get("hits", 0) if isinstance(data, dict) else 0
+        offset += 100
+        if offset >= hits or not jobs:
+            break
+    return out
+
+
+def fetch_atlassian(cfg):
+    """Atlassian's iCIMS-backed public listings feed (all locations)."""
+    url = "https://www.atlassian.com/endpoint/careers/listings"
+    data = _get_json(url)
+    out = []
+    for j in data if isinstance(data, list) else []:
+        loc = "; ".join(j.get("locations", []) or [])
+        job_url = (j.get("portalJobPost") or {}).get("portalUrl", "")
+        out.append(_norm(j.get("id"), j.get("title"), loc, job_url))
+    return out
+
+
+def fetch_snap(cfg):
+    """careers.snap.com search API (all locations; filtered downstream)."""
+    url = "https://careers.snap.com/api/jobs"
+    data = _get_json(url)
+    out = []
+    for item in data.get("body", []) if isinstance(data, dict) else []:
+        s = item.get("_source", {})
+        loc = s.get("primary_location") or "; ".join(
+            o.get("location", "") for o in s.get("offices", []))
+        out.append(_norm(item.get("_id") or s.get("id"),
+                         s.get("title"), loc, s.get("absolute_url")))
+    return out
+
+
+def fetch_eightfold(cfg):
+    """Eightfold.ai talent-portal API (used by Netflix and others)."""
+    host = cfg["host"]          # e.g. netflix.eightfold.ai
+    domain = cfg["domain"]      # e.g. netflix.com
+    portal = cfg["portal"]      # e.g. explore.jobs.netflix.net
+    out = []
+    start = 0
+    while start < MAX_EIGHTFOLD:
+        url = (f"https://{host}/api/apply/v2/jobs?domain={domain}"
+               f"&start={start}&num=50&location=Netherlands")
+        data = _get_json(url)
+        positions = data.get("positions", []) if isinstance(data, dict) else []
+        for p in positions:
+            loc = p.get("location") or "; ".join(p.get("locations", []))
+            job_url = f"https://{portal}/careers/job/{p.get('id')}"
+            out.append(_norm(p.get("id"),
+                             p.get("name") or p.get("posting_name"),
+                             loc, job_url))
+        count = data.get("count", 0) if isinstance(data, dict) else 0
+        start += 50
+        if start >= count or not positions:
+            break
+    return out
+
+
 ADAPTERS = {
     "greenhouse": fetch_greenhouse,
     "lever": fetch_lever,
@@ -146,6 +225,10 @@ ADAPTERS = {
     "smartrecruiters": fetch_smartrecruiters,
     "recruitee": fetch_recruitee,
     "workday": fetch_workday,
+    "amazon": fetch_amazon,
+    "atlassian": fetch_atlassian,
+    "snap": fetch_snap,
+    "eightfold": fetch_eightfold,
 }
 
 
@@ -159,4 +242,5 @@ def fetch_company(cfg):
     for j in jobs:
         j["company"] = cfg["name"]
         j["ats"] = ats
+        j["tier"] = cfg.get("tier", "")
     return jobs

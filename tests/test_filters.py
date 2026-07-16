@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jobtracker import filters, state  # noqa: E402
+from jobtracker import filters, notify, state  # noqa: E402
 
 FILTERS = {
     "include_keywords": ["data engineer", "machine learning"],
@@ -73,6 +73,17 @@ def test_software_engineer_matches():
     flt = {"include_keywords": ["software engineer"], "locations": ["amsterdam"]}
     job = _job("Software Engineer II", "Amsterdam, NL")
     assert filters.matches(job, flt) is True
+
+
+def test_sort_by_priority_orders_best_tier_first():
+    jobs = [
+        {"company": "A", "tier": "A", "title": "t", "location": "l", "url": "u"},
+        {"company": "B", "tier": "S++", "title": "t", "location": "l", "url": "u"},
+        {"company": "C", "tier": "S", "title": "t", "location": "l", "url": "u"},
+        {"company": "D", "tier": "", "title": "t", "location": "l", "url": "u"},
+    ]
+    ordered = [j["tier"] for j in notify.sort_by_priority(jobs)]
+    assert ordered == ["S++", "S", "A", ""]
 
 
 def test_split_new_only_returns_unseen():
