@@ -1,11 +1,13 @@
 # What counts as a match, and where you get notified.
 
 filters:
-  # A job matches if its title contains ANY of these (case-insensitive).
-  # Tuned for a data / AI / ML new-grad. Edit freely.
+  # A job matches if its title contains ANY of these (whole-word, case-insensitive).
+  # Tuned for a data / AI / SWE new-grad + internships. Edit freely.
   include_keywords:
+    # data / AI / ML
     - data scientist
     - data engineer
+    - data science
     - machine learning
     - ml engineer
     - "ai engineer"
@@ -15,8 +17,34 @@ filters:
     - research scientist
     - quant
     - deep learning
+    - computer vision
+    - nlp
     - mlops
     - data platform
+    # software engineering
+    - software engineer
+    - software developer
+    - backend
+    - frontend
+    - full stack
+    - full-stack
+    - developer
+    - platform engineer
+    - cloud engineer
+    - infrastructure engineer
+    - devops
+    - site reliability
+    - sre
+    # early-career catch-all -- catches weird/unpredictable titles
+    # (e.g. Tesla internships) as long as they're internships or grad roles
+    - intern
+    - internship
+    - graduate
+    - working student
+    - traineeship
+    - trainee
+    - junior
+    - "new grad"
 
   # Drop a job if its title contains ANY of these (seniority filter).
   # Comment out the list to keep all seniorities.

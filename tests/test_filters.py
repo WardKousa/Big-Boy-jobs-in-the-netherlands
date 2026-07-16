@@ -50,6 +50,31 @@ def test_empty_locations_accepts_any_place():
     assert filters.matches(job, flt) is True
 
 
+def test_weird_internship_title_matches_on_intern():
+    flt = {"include_keywords": ["intern"], "locations": ["netherlands"]}
+    job = _job("Autopilot Firmware Intern", "Amsterdam, Netherlands")
+    assert filters.matches(job, flt) is True
+
+
+def test_intern_does_not_match_international():
+    flt = {"include_keywords": ["intern"], "locations": []}
+    job = _job("International Sales Associate", "Amsterdam")
+    assert filters.matches(job, flt) is False
+
+
+def test_lead_exclude_does_not_reject_leading():
+    flt = {"include_keywords": ["software engineer"],
+           "exclude_keywords": ["lead"], "locations": []}
+    job = _job("Software Engineer, Leading Payments Team", "Amsterdam")
+    assert filters.matches(job, flt) is True
+
+
+def test_software_engineer_matches():
+    flt = {"include_keywords": ["software engineer"], "locations": ["amsterdam"]}
+    job = _job("Software Engineer II", "Amsterdam, NL")
+    assert filters.matches(job, flt) is True
+
+
 def test_split_new_only_returns_unseen():
     seen = {}
     jobs = [_job("Data Engineer", "Amsterdam")]
