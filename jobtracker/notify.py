@@ -74,7 +74,11 @@ def _format_lines(new_jobs):
     for j in sort_by_priority(new_jobs):
         loc = f" — {j['location']}" if j.get("location") else ""
         tier = f"{j['tier']} · " if j.get("tier") else ""
-        lines.append(f"• [{tier}{j['company']}] {j['title']}{loc}\n  {j['url']}")
+        # The age is the provider's posting date, not when we first saw it --
+        # a job can be new to us and still be months old.
+        age = f" · posted {j['posted']}" if j.get("posted") else ""
+        lines.append(
+            f"• [{tier}{j['company']}] {j['title']}{loc}{age}\n  {j['url']}")
     return lines
 
 

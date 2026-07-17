@@ -7,16 +7,23 @@ returns a list of normalized job dicts:
       "title": str,
       "location": str,
       "url": str,
+      "posted": str,      # human age ("today", "12d ago"); "" if unknown
       "company": str,     # filled in by the dispatcher
       "ats": str,
     }
+
+Note "posted" is when the provider says the role was published -- not when this
+tracker first saw it. A job can be new to us (a company was just added, or a
+paging bug was fixed) while being months old.
 
 Stdlib only (urllib) so the tracker runs with zero third-party HTTP deps.
 """
 
 import json
+import re
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 
 TIMEOUT = 20
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -47,12 +54,74 @@ def _get_json(url, data=None, method="GET"):
         raise FetchError(f"{url}: {exc}") from exc
 
 
-def _norm(source_id, title, location, url):
+def _age_from(dt):
+    """Render a posting datetime as a short age, e.g. "today" / "12d ago"."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - dt).days
+    if days < 0:
+        return ""
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "1d ago"
+    return f"{days}d ago"
+
+
+def _posted_str(value):
+    """Best-effort age string from whatever shape a provider reports.
+
+    Every ATS answers this question differently -- epoch millis (Lever), ISO
+    with an offset (Greenhouse/Ashby), ISO with Z (SmartRecruiters), a
+    space-separated UTC stamp (Recruitee), a long-form date (Amazon), or
+    already-humanised prose (Workday's "Posted Today"). Best-effort by design:
+    an unparseable value yields "", and the alert simply omits the age rather
+    than failing.
+    """
+    if value in (None, ""):
+        return ""
+
+    if isinstance(value, (int, float)):
+        # Lever reports milliseconds; anything past ~2001 in seconds is millis.
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return _age_from(datetime.fromtimestamp(seconds, timezone.utc))
+        except (OverflowError, OSError, ValueError):
+            return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    # Workday already says it in words: "Posted Today", "Posted 30+ Days Ago".
+    if text.lower().startswith("posted"):
+        return text[len("posted"):].strip().lower()
+
+    cleaned = re.sub(r"\s+", " ", text)
+    candidates = [cleaned]
+    if cleaned.endswith(" UTC"):                      # Recruitee
+        candidates.append(cleaned[:-4].replace(" ", "T"))
+    if cleaned.endswith("Z"):                         # SmartRecruiters
+        candidates.append(cleaned[:-1] + "+00:00")
+
+    for candidate in candidates:
+        try:
+            return _age_from(datetime.fromisoformat(candidate))
+        except ValueError:
+            pass
+    try:                                              # Amazon: "November 3, 2025"
+        return _age_from(datetime.strptime(cleaned, "%B %d, %Y"))
+    except ValueError:
+        return ""
+
+
+def _norm(source_id, title, location, url, posted=None):
     return {
         "source_id": str(source_id),
         "title": (title or "").strip(),
         "location": (location or "").strip(),
         "url": url or "",
+        "posted": _posted_str(posted),
     }
 
 
@@ -63,7 +132,8 @@ def fetch_greenhouse(cfg):
     out = []
     for j in data.get("jobs", []):
         loc = (j.get("location") or {}).get("name", "")
-        out.append(_norm(j.get("id"), j.get("title"), loc, j.get("absolute_url")))
+        out.append(_norm(j.get("id"), j.get("title"), loc,
+                         j.get("absolute_url"), j.get("updated_at")))
     return out
 
 
@@ -74,7 +144,8 @@ def fetch_lever(cfg):
     out = []
     for j in data if isinstance(data, list) else []:
         loc = (j.get("categories") or {}).get("location", "")
-        out.append(_norm(j.get("id"), j.get("text"), loc, j.get("hostedUrl")))
+        out.append(_norm(j.get("id"), j.get("text"), loc,
+                         j.get("hostedUrl"), j.get("createdAt")))
     return out
 
 
@@ -84,8 +155,8 @@ def fetch_ashby(cfg):
     data = _get_json(url)
     out = []
     for j in data.get("jobs", []):
-        out.append(_norm(j.get("id"), j.get("title"),
-                         j.get("location"), j.get("jobUrl")))
+        out.append(_norm(j.get("id"), j.get("title"), j.get("location"),
+                         j.get("jobUrl"), j.get("publishedAt")))
     return out
 
 
@@ -103,7 +174,8 @@ def fetch_smartrecruiters(cfg):
             loc_str = ", ".join(
                 x for x in [loc.get("city"), loc.get("country")] if x)
             job_url = f"https://jobs.smartrecruiters.com/{slug}/{j.get('id')}"
-            out.append(_norm(j.get("id"), j.get("name"), loc_str, job_url))
+            out.append(_norm(j.get("id"), j.get("name"), loc_str, job_url,
+                             j.get("releasedDate")))
         total = data.get("totalFound", 0) if isinstance(data, dict) else 0
         offset += 100
         if offset >= total or not content:
@@ -119,7 +191,8 @@ def fetch_recruitee(cfg):
     for j in data.get("offers", []):
         loc = ", ".join(x for x in [j.get("city"), j.get("country")] if x)
         job_url = j.get("careers_url") or j.get("careers_apply_url", "")
-        out.append(_norm(j.get("id"), j.get("title"), loc, job_url))
+        out.append(_norm(j.get("id"), j.get("title"), loc, job_url,
+                         j.get("published_at")))
     return out
 
 
@@ -144,7 +217,8 @@ def fetch_workday(cfg):
             # empty list would take down the whole run.
             bullets = j.get("bulletFields") or []
             out.append(_norm((bullets[0] if bullets else "") or path,
-                             j.get("title"), loc, job_url))
+                             j.get("title"), loc, job_url,
+                             j.get("postedOn")))
 
         # Nvidia, Philips, NXP and eBay report `total` only on the first page
         # and 0 on every page after it. Re-reading it each time made
@@ -175,7 +249,8 @@ def fetch_amazon(cfg):
         for j in jobs:
             job_url = "https://www.amazon.jobs" + (j.get("job_path") or "")
             out.append(_norm(j.get("id_icims") or j.get("id"),
-                             j.get("title"), j.get("location"), job_url))
+                             j.get("title"), j.get("location"), job_url,
+                             j.get("posted_date")))
         hits = data.get("hits", 0) if isinstance(data, dict) else 0
         offset += 100
         if offset >= hits or not jobs:

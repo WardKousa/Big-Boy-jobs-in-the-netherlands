@@ -168,6 +168,43 @@ def _http_error(code, payload):
         {}, io.BytesIO(body))
 
 
+def test_posted_str_handles_every_provider_format():
+    """Each ATS reports the posting date differently; all must normalise."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    three_days = now - timedelta(days=3)
+
+    # Lever: epoch milliseconds
+    assert adapters._posted_str(three_days.timestamp() * 1000) == "3d ago"
+    # Greenhouse / Ashby: ISO with offset
+    assert adapters._posted_str(three_days.isoformat()) == "3d ago"
+    # SmartRecruiters: ISO with Z
+    assert adapters._posted_str(
+        three_days.strftime("%Y-%m-%dT%H:%M:%S.000Z")) == "3d ago"
+    # Recruitee: "YYYY-MM-DD HH:MM:SS UTC"
+    assert adapters._posted_str(
+        three_days.strftime("%Y-%m-%d %H:%M:%S UTC")) == "3d ago"
+    # Amazon: long-form date, sometimes double-spaced
+    assert adapters._posted_str(
+        three_days.strftime("%B  %d, %Y").replace(" 0", " ")) == "3d ago"
+    # Workday: already prose
+    assert adapters._posted_str("Posted Today") == "today"
+    assert adapters._posted_str("Posted 30+ Days Ago") == "30+ days ago"
+
+
+def test_posted_str_is_best_effort_not_fatal():
+    for junk in (None, "", "not a date", {}, []):
+        assert adapters._posted_str(junk) == ""
+
+
+def test_alert_line_shows_posting_age_when_known():
+    job = {"company": "Philips", "tier": "A", "title": "Data Scientist",
+           "location": "Eindhoven", "url": "u", "posted": "12d ago"}
+    assert "posted 12d ago" in notify._format_lines([job])[0]
+    del job["posted"]
+    assert "posted" not in notify._format_lines([job])[0]
+
+
 def test_dedupe_collapses_same_role_under_different_req_ids():
     """ASML lists one internship under two req ids; alert once."""
     jobs = [

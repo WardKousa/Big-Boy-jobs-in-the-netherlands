@@ -214,10 +214,15 @@ companies:
 #   Microsoft (S+)  - gcsservices host unreachable from CI probe
 #   Uber (S)        - loadSearchJobsResults returns 403 (bot protection)
 #   Tesla (S)       - cua-api returns 403 (Akamai bot protection)
-#   ASML (S)        - Workday tenant/site not yet identified
 #   Qualcomm (S)    - Workday site name not yet identified (422)
 #   Booking.com (A+)- custom system; SmartRecruiters tenant empty
-#   Maverick Derivatives, All Options - endpoints not found
+#   All Options     - endpoints not found
+#
+# SOLVED since this list was written (now in `companies` above):
+#   ASML  -> workday tenant asml, site ASMLEXT1
+#   Maverick Derivatives -> greenhouse slug maverickderivatives. The board is
+#     valid but currently returns zero postings (HTTP 200, total 0); a wrong
+#     slug 404s instead, so this is "no openings", not a broken adapter.
 #   Adidas, Shell, TomTom, IKEA, IBM, ABB, Arcadis, Backbase, Workiva,
 #     Huawei, Ortec, CloudKitchens, SurePrep, Just Eat Takeaway
 #   Dutch banks: ING, ABN AMRO, Rabobank (custom/Eightfold-style, unconfirmed)
