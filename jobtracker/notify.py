@@ -6,11 +6,39 @@ from environment variables -- never hardcode tokens in config.
 import json
 import os
 import smtplib
+import time
 import urllib.error
 import urllib.request
 from email.mime.text import MIMEText
 
 MAX_ITEMS_PER_MESSAGE = 30
+
+# Telegram hard-caps messages at 4096 UTF-16 code units. Budget below that:
+# the header and the "\n\n" separators are added on top of the line lengths.
+TELEGRAM_TEXT_LIMIT = 3500
+TELEGRAM_SEND_RETRIES = 4
+TELEGRAM_TIMEOUT = 20
+
+# Operator hints for the Telegram errors that are actually worth acting on.
+# Telegram's own wording is accurate but doesn't say which secret to fix.
+TELEGRAM_HINTS = {
+    400: ("Check TELEGRAM_CHAT_ID. It must be the numeric id from "
+          "scripts/telegram_setup.py (negative for groups), not a @username."),
+    401: "Check TELEGRAM_BOT_TOKEN -- Telegram rejected it as unauthorized.",
+    403: ("The bot cannot message this chat. Open the bot in Telegram and "
+          "press Start, then retry."),
+    404: "Check TELEGRAM_BOT_TOKEN -- that bot does not exist.",
+}
+
+
+class NotifyError(Exception):
+    """Raised when a notification channel cannot deliver.
+
+    Carries the provider's own explanation, not just the HTTP status: a bare
+    "HTTP Error 400: Bad Request" is unactionable, whereas Telegram's body
+    says exactly which secret is wrong.
+    """
+
 
 # Priority order for sorting alerts (best first). Unknown tiers sort last.
 TIER_ORDER = {"S++": 0, "S+": 1, "S": 2, "A+": 3, "A": 4, "B": 5, "C": 6}
@@ -42,40 +70,108 @@ def notify_console(new_jobs, _settings):
     print("\n".join(_format_lines(new_jobs)))
 
 
-def notify_telegram(new_jobs, _settings):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set")
-    if not new_jobs:
-        return
-    lines = _format_lines(new_jobs)
-    # Telegram caps messages at 4096 chars; chunk conservatively.
-    chunk, size = [], 0
-    batches = []
+def _http_detail(exc):
+    """Extract Telegram's own error text from an HTTPError.
+
+    urllib's str(HTTPError) is only "HTTP Error 400: Bad Request"; the response
+    body holds the actual reason ("chat not found"). Reading it is what makes a
+    failed send diagnosable from a CI log.
+    """
+    try:
+        body = exc.read().decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return f"HTTP {exc.code}"
+    try:
+        desc = json.loads(body).get("description")
+    except ValueError:
+        desc = None
+    return f"HTTP {exc.code}: {desc or body[:200]}"
+
+
+def _retry_after(exc, default):
+    """Seconds Telegram asks us to wait after a 429, if it says."""
+    try:
+        params = json.loads(exc.read().decode("utf-8", "replace"))
+        return int(params.get("parameters", {}).get("retry_after", default))
+    except (OSError, ValueError, TypeError):
+        return default
+
+
+def telegram_batches(lines, total):
+    """Split formatted lines into message-sized chunks.
+
+    Sizing accounts for the header and the "\\n\\n" separators, not just the raw
+    line lengths, so a full batch cannot overshoot Telegram's cap.
+    """
+    header = f"🚨 {total} new job(s):\n\n"
+    batches, chunk, size = [], [], len(header)
     for line in lines:
-        if size + len(line) > 3500 or len(chunk) >= MAX_ITEMS_PER_MESSAGE:
+        # `chunk and` keeps an over-long first line from emitting an empty batch.
+        if chunk and (size + len(line) + 2 > TELEGRAM_TEXT_LIMIT
+                      or len(chunk) >= MAX_ITEMS_PER_MESSAGE):
             batches.append(chunk)
-            chunk, size = [], 0
+            chunk, size = [], len(header)
         chunk.append(line)
-        size += len(line)
+        size += len(line) + 2
     if chunk:
         batches.append(chunk)
+    return [header + "\n\n".join(b) for b in batches]
 
+
+def _send_telegram_text(token, chat_id, text, sleep=time.sleep):
+    """POST one message, retrying rate limits and transient network errors."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    for batch in batches:
-        text = f"🚨 {len(new_jobs)} new job(s):\n\n" + "\n\n".join(batch)
-        payload = json.dumps({
-            "chat_id": chat_id, "text": text,
-            "disable_web_page_preview": True,
-        }).encode()
+    payload = json.dumps({
+        "chat_id": chat_id, "text": text,
+        "disable_web_page_preview": True,
+    }).encode()
+
+    last = "unknown error"
+    for attempt in range(TELEGRAM_SEND_RETRIES):
         req = urllib.request.Request(
-            url, data=payload,
-            headers={"Content-Type": "application/json"})
+            url, data=payload, headers={"Content-Type": "application/json"})
         try:
-            urllib.request.urlopen(req, timeout=20)
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Telegram send failed: {exc}") from exc
+            with urllib.request.urlopen(req, timeout=TELEGRAM_TIMEOUT) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as exc:
+            code = exc.code
+            if code == 429:
+                sleep(_retry_after(exc, 2 ** attempt))
+                last = "HTTP 429: rate limited"
+                continue
+            if code >= 500:
+                last = _http_detail(exc)
+                sleep(2 ** attempt)
+                continue
+            # Other 4xx are configuration errors; retrying cannot help.
+            detail = _http_detail(exc)
+            hint = TELEGRAM_HINTS.get(code)
+            raise NotifyError(
+                f"Telegram rejected the message: {detail}"
+                + (f"\n  Hint: {hint}" if hint else "")) from exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError,
+                ValueError) as exc:
+            last = str(exc)
+            sleep(2 ** attempt)
+
+    raise NotifyError(
+        f"Telegram send failed after {TELEGRAM_SEND_RETRIES} attempts: {last}")
+
+
+def notify_telegram(new_jobs, _settings, sleep=time.sleep):
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
+    # Secrets arrive via CI and often carry stray whitespace when pasted.
+    token = (token or "").strip()
+    chat_id = (chat_id or "").strip()
+    if not token or not chat_id:
+        raise NotifyError(
+            "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set. Run "
+            "scripts/telegram_setup.py and add both as GitHub Actions secrets.")
+    if not new_jobs:
+        return
+    for text in telegram_batches(_format_lines(new_jobs), len(new_jobs)):
+        _send_telegram_text(token, chat_id, text, sleep=sleep)
 
 
 def notify_email(new_jobs, _settings):
@@ -85,7 +181,7 @@ def notify_email(new_jobs, _settings):
     password = os.environ.get("SMTP_PASS")
     to_addr = os.environ.get("EMAIL_TO", user)
     if not all([host, user, password, to_addr]):
-        raise RuntimeError("SMTP_HOST/SMTP_USER/SMTP_PASS/EMAIL_TO not set")
+        raise NotifyError("SMTP_HOST/SMTP_USER/SMTP_PASS/EMAIL_TO not set")
     if not new_jobs:
         return
     body = "\n\n".join(_format_lines(new_jobs))
@@ -93,10 +189,13 @@ def notify_email(new_jobs, _settings):
     msg["Subject"] = f"{len(new_jobs)} new job(s) matching your filters"
     msg["From"] = user
     msg["To"] = to_addr
-    with smtplib.SMTP(host, port, timeout=30) as server:
-        server.starttls()
-        server.login(user, password)
-        server.sendmail(user, [to_addr], msg.as_string())
+    try:
+        with smtplib.SMTP(host, port, timeout=30) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(user, [to_addr], msg.as_string())
+    except (smtplib.SMTPException, OSError) as exc:
+        raise NotifyError(f"Email send failed: {exc}") from exc
 
 
 NOTIFIERS = {

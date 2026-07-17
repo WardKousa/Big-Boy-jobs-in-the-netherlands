@@ -137,7 +137,11 @@ def fetch_workday(cfg):
             path = j.get("externalPath", "")
             job_url = f"{base}/{site}{path}" if path else base
             loc = j.get("locationsText", "")
-            out.append(_norm(j.get("bulletFields", [path])[0] or path,
+            # bulletFields holds the requisition id, but a tenant can return it
+            # empty -- the dict default alone doesn't cover that, and [0] on an
+            # empty list would take down the whole run.
+            bullets = j.get("bulletFields") or []
+            out.append(_norm((bullets[0] if bullets else "") or path,
                              j.get("title"), loc, job_url))
         total = data.get("total", 0) if isinstance(data, dict) else 0
         offset += 20
