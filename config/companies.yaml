@@ -32,6 +32,10 @@ companies:
     ats: recruitee
     slug: webbtraders
     tier: "A+"
+  - name: "Maverick Derivatives"
+    ats: greenhouse
+    slug: maverickderivatives
+    tier: "S"
 
   # ---- big tech / AI ----
   - name: "Netflix"
@@ -177,6 +181,12 @@ companies:
     wd: wd3
     site: Careers
     tier: "A+"
+  - name: "ASML"
+    ats: workday
+    tenant: asml
+    wd: wd3
+    site: ASMLEXT1
+    tier: "S"
   - name: "Flexport"
     ats: greenhouse
     slug: flexport
