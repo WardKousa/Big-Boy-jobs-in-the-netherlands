@@ -35,8 +35,12 @@ filters:
     - devops
     - site reliability
     - sre
-    # early-career catch-all -- catches weird/unpredictable titles
-    # (e.g. Tesla internships) as long as they're internships or grad roles
+
+  # Early-career terms. These do NOT match on their own -- a title must ALSO
+  # contain one of `technical_keywords` below. On its own "intern" matches
+  # every HR / Law / Media internship a big employer posts (ASML alone floods
+  # ~30 of them), which buries the roles you actually want.
+  early_career_keywords:
     - intern
     - internship
     - graduate
@@ -45,6 +49,50 @@ filters:
     - trainee
     - junior
     - "new grad"
+    - starter
+
+  # The technical signal that makes an early-career title count. Deliberately
+  # software/data-leaning: broad words like "engineering" would re-admit every
+  # mechanical and industrial internship.
+  technical_keywords:
+    - software
+    - computer science
+    - data
+    - machine learning
+    - artificial intelligence
+    - "ai"
+    - "ml"
+    - deep learning
+    - computer vision
+    - nlp
+    - analytics
+    - algorithm
+    - backend
+    - front end
+    - frontend
+    - full stack
+    - full-stack
+    - developer
+    - programming
+    - python
+    - java
+    - "c++"
+    - cloud
+    - devops
+    - sre
+    - infrastructure
+    - platform
+    - database
+    - firmware
+    - embedded
+    - robotics
+    - quant
+    - cyber
+    - security
+    # NOTE: do not add "it" here. Matching is case-insensitive, so it matches
+    # the pronoun -- "make it happen" would qualify any HR internship.
+    - "it security"
+    - "it engineer"
 
   # Drop a job if its title contains ANY of these (seniority filter).
   # Comment out the list to keep all seniorities.

@@ -24,13 +24,40 @@ def _contains_any(text, needles):
     return any(n.strip() and _pattern(n).search(text) for n in needles)
 
 
+def _title_wanted(title, filters):
+    """Does the title describe a role we want?
+
+    Two independent ways to qualify:
+
+    1. `include_keywords` -- a role name that stands on its own
+       ("data engineer"), matched directly.
+    2. `early_career_keywords` + `technical_keywords` -- an early-career term
+       ("intern") only qualifies alongside a technical signal. On its own,
+       "intern" matches every HR, Law and Media internship a big employer
+       posts, which drowns the alerts that matter. Both lists must be
+       configured for this path; otherwise it is skipped and behaviour is
+       exactly the legacy include-only match.
+    """
+    include = filters.get("include_keywords") or []
+    if include and _contains_any(title, include):
+        return True
+
+    early = filters.get("early_career_keywords") or []
+    technical = filters.get("technical_keywords") or []
+    if early and technical:
+        if _contains_any(title, early) and _contains_any(title, technical):
+            return True
+
+    # No include list and no early-career pair configured => accept everything.
+    return not include and not (early and technical)
+
+
 def matches(job, filters):
     """Return True if a normalized job passes the configured filters."""
     title = job.get("title", "")
     location = job.get("location", "")
 
-    include = filters.get("include_keywords") or []
-    if include and not _contains_any(title, include):
+    if not _title_wanted(title, filters):
         return False
 
     exclude = filters.get("exclude_keywords") or []
