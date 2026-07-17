@@ -209,7 +209,10 @@ def test_malformed_tokens_are_explained_not_echoed():
     cases = {
         "bot123456789:AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "bot",
         "https://api.telegram.org/bot123456789:AAHk": "URL",
-        "AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "colon",
+        # The real CI failure: 35 chars, no colon -- the bot id prefix was
+        # dropped when pasting into the GitHub secret.
+        "AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "half AFTER the colon",
+        "short-no-colon": "no colon",
         "abcdefgh:AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "numeric bot id",
         "123456789:AAHk": "truncated",
     }

@@ -100,6 +100,13 @@ def _token_complaint(token):
     if token.startswith(("http://", "https://")):
         return "it looks like a URL -- paste only the token, not the API URL"
     if ":" not in token:
+        # The secret half is ~35 chars of [A-Za-z0-9_-]. A value of that shape
+        # with no colon is almost always a copy that lost its "<bot_id>:"
+        # prefix, so say that rather than the generic complaint.
+        if 30 <= len(token) <= 45 and re.fullmatch(r"[A-Za-z0-9_-]+", token):
+            return (f"it has no colon and is {len(token)} chars -- this looks "
+                    "like only the half AFTER the colon. The '123456789:' bot "
+                    "id prefix is missing; copy the whole token")
         return (f"it has no colon (got {len(token)} chars); a token looks like "
                 "123456789:AAHk9v-Wq...")
     bot_id, _, secret = token.partition(":")
