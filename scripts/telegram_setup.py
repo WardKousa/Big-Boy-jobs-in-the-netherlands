@@ -64,9 +64,20 @@ def main():
         ok = json.load(r).get("ok")
     print("Test message sent — check Telegram!" if ok else "Test send failed.")
 
-    print("\n--- Add these two as GitHub Actions secrets ---")
-    print(f"TELEGRAM_BOT_TOKEN = {token}")
-    print(f"TELEGRAM_CHAT_ID   = {chat_id}")
+    # Print each value alone on its line. A "NAME = value" layout invites
+    # copying the whole line into the secret, which yields a mangled token and
+    # an opaque HTTP 404 from Telegram at the worst possible moment.
+    print("\n--- Add these as GitHub Actions secrets ---")
+    print("Settings -> Secrets and variables -> Actions -> New repository secret")
+    print("Copy ONLY the value line -- no name, no quotes, no spaces.\n")
+    print("Name:  TELEGRAM_BOT_TOKEN")
+    print("Value:")
+    print(token)
+    print("\nName:  TELEGRAM_CHAT_ID")
+    print("Value:")
+    print(chat_id)
+    print("\nThen verify without waiting for a real posting:")
+    print("  python -m jobtracker.run --test-notify")
 
 
 if __name__ == "__main__":

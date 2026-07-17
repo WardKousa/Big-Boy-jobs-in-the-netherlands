@@ -73,3 +73,23 @@ def matches(job, filters):
 
 def apply_filters(jobs, filters):
     return [j for j in jobs if matches(j, filters)]
+
+
+def dedupe(jobs):
+    """Collapse postings that differ only by requisition id.
+
+    Big employers list one role under several reqs -- ASML posts the same
+    "Computer Science internship: IT control framework" twice -- and alerting
+    on each is noise. Apply this to the *new* jobs only, after state has
+    recorded every source_id, so the dropped twin cannot resurface as new.
+    """
+    out, seen_keys = [], set()
+    for job in jobs:
+        key = (job.get("company", "").strip().lower(),
+               job.get("title", "").strip().lower(),
+               job.get("location", "").strip().lower())
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append(job)
+    return out

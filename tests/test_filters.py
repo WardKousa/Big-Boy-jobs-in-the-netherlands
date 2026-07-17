@@ -156,6 +156,105 @@ def _http_error(code, payload):
         {}, io.BytesIO(body))
 
 
+def test_dedupe_collapses_same_role_under_different_req_ids():
+    """ASML lists one internship under two req ids; alert once."""
+    jobs = [
+        {"company": "ASML", "source_id": "J-00339923", "title": "CS internship",
+         "location": "Veldhoven", "url": "a"},
+        {"company": "ASML", "source_id": "J-00339927", "title": "CS internship",
+         "location": "Veldhoven", "url": "b"},
+    ]
+    out = filters.dedupe(jobs)
+    assert len(out) == 1
+    assert out[0]["source_id"] == "J-00339923"  # keeps the first
+
+
+def test_dedupe_keeps_distinct_roles_and_locations():
+    jobs = [
+        {"company": "ASML", "source_id": "1", "title": "CS internship",
+         "location": "Veldhoven", "url": "a"},
+        {"company": "ASML", "source_id": "2", "title": "SWE internship",
+         "location": "Veldhoven", "url": "b"},
+        {"company": "ASML", "source_id": "3", "title": "CS internship",
+         "location": "Eindhoven", "url": "c"},
+    ]
+    assert len(filters.dedupe(jobs)) == 3
+
+
+def test_dedupe_runs_after_state_records_every_source_id():
+    """Both twins must land in `seen`, or the dropped one alerts later."""
+    seen = {}
+    jobs = [
+        {"company": "ASML", "source_id": "A", "title": "CS internship",
+         "location": "Veldhoven", "url": "a"},
+        {"company": "ASML", "source_id": "B", "title": "CS internship",
+         "location": "Veldhoven", "url": "b"},
+    ]
+    new = filters.dedupe(state.split_new(jobs, seen))
+    assert len(new) == 1
+    assert "ASML::A" in seen and "ASML::B" in seen
+    assert filters.dedupe(state.split_new(jobs, seen)) == []
+
+
+VALID_TOKEN = "123456789:AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA"
+
+
+def test_valid_token_shape_accepted():
+    assert notify._token_complaint(VALID_TOKEN) is None
+
+
+def test_malformed_tokens_are_explained_not_echoed():
+    """404 from Telegram means a malformed token. Catch the mangled-paste
+    shapes locally, and never echo the secret into a public CI log."""
+    cases = {
+        "bot123456789:AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "bot",
+        "https://api.telegram.org/bot123456789:AAHk": "URL",
+        "AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "colon",
+        "abcdefgh:AAHk9v-Wq3nP_xZyL0mB7dR4tS6uV8wX2yA": "numeric bot id",
+        "123456789:AAHk": "truncated",
+    }
+    for token, expected in cases.items():
+        complaint = notify._token_complaint(token)
+        assert complaint is not None, f"should reject {token[:12]}"
+        assert expected in complaint, f"{expected!r} not in {complaint!r}"
+        assert token not in complaint, "must not echo the secret"
+
+
+def test_preflight_rejects_malformed_token_before_any_network_call():
+    os.environ["TELEGRAM_BOT_TOKEN"] = "botAAHk9v-Wq3nP"
+    os.environ["TELEGRAM_CHAT_ID"] = "123"
+    try:
+        notify.preflight({"notifications": {"channel": "telegram"}})
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "malformed" in str(exc)
+        assert "BotFather" in str(exc)
+    finally:
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        os.environ.pop("TELEGRAM_CHAT_ID", None)
+
+
+def test_preflight_ignores_console_channel():
+    notify.preflight({"notifications": {"channel": "console"}})
+
+
+def test_telegram_404_hint_says_malformed_not_missing():
+    """The real CI failure: 404 with an unhelpful 'bot does not exist'."""
+    def fake_urlopen(req, timeout=None):
+        raise _http_error(404, {"error_code": 404, "description": "Not Found"})
+
+    orig = notify.urllib.request.urlopen
+    notify.urllib.request.urlopen = fake_urlopen
+    try:
+        notify._send_telegram_text(VALID_TOKEN, "1", "hi", sleep=lambda s: None)
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "malformed" in str(exc)
+        assert "BotFather" in str(exc)
+    finally:
+        notify.urllib.request.urlopen = orig
+
+
 def test_telegram_error_surfaces_description_not_bare_status():
     """The regression behind the CI failure: 'HTTP Error 400: Bad Request'
     alone is unactionable; the body names the real problem."""

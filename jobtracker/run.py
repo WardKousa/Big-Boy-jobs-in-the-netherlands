@@ -90,6 +90,15 @@ def main(argv=None):
     if args.test_notify:
         return _test_notify(settings)
 
+    # Fail on a broken token now rather than after fetching 6700 postings.
+    # --seed and --dry-run never deliver, so they don't need credentials.
+    if not (args.seed or args.dry_run):
+        try:
+            notify.preflight(settings)
+        except notify.NotifyError as exc:
+            print(f"[error] {exc}", file=sys.stderr)
+            return 1
+
     companies = config.load_companies()
     flt = settings.get("filters", {})
 
@@ -103,7 +112,9 @@ def main(argv=None):
     print(f"{len(matched)} match your filters.")
 
     seen = state.load()
-    new_jobs = state.split_new(matched, seen)
+    # split_new records every source_id in `seen` before dedupe drops twins,
+    # so a collapsed duplicate can never resurface as new later.
+    new_jobs = filters.dedupe(state.split_new(matched, seen))
 
     if args.seed:
         state.save(seen)

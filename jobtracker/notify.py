@@ -5,6 +5,7 @@ from environment variables -- never hardcode tokens in config.
 
 import json
 import os
+import re
 import smtplib
 import time
 import urllib.error
@@ -19,15 +20,30 @@ TELEGRAM_TEXT_LIMIT = 3500
 TELEGRAM_SEND_RETRIES = 4
 TELEGRAM_TIMEOUT = 20
 
+# A bot token is "<bot_id>:<secret>", e.g. 123456789:AAHk9v-Wq...
+TELEGRAM_TOKEN_RE = re.compile(r"^\d{6,}:[A-Za-z0-9_-]{30,}$")
+
+TOKEN_HELP = ("Get a fresh one from @BotFather (/mybots -> your bot -> API "
+              "Token) and update the TELEGRAM_BOT_TOKEN secret under "
+              "Settings -> Secrets and variables -> Actions.")
+
 # Operator hints for the Telegram errors that are actually worth acting on.
 # Telegram's own wording is accurate but doesn't say which secret to fix.
 TELEGRAM_HINTS = {
     400: ("Check TELEGRAM_CHAT_ID. It must be the numeric id from "
           "scripts/telegram_setup.py (negative for groups), not a @username."),
-    401: "Check TELEGRAM_BOT_TOKEN -- Telegram rejected it as unauthorized.",
+    401: ("TELEGRAM_BOT_TOKEN is well-formed but Telegram does not recognise "
+          "it -- most likely revoked or from a deleted bot. " + TOKEN_HELP),
     403: ("The bot cannot message this chat. Open the bot in Telegram and "
           "press Start, then retry."),
-    404: "Check TELEGRAM_BOT_TOKEN -- that bot does not exist.",
+    # Verified against the live API: a well-formed but invalid token returns
+    # 401, while 404 means the /bot<token>/ path itself does not resolve. So a
+    # 404 is always a mangled value, never merely a wrong one.
+    404: ("TELEGRAM_BOT_TOKEN is malformed -- the value is mangled, not just "
+          "wrong (a wrong-but-valid-looking token would return 401).\n"
+          "  Common causes: pasting the whole 'TELEGRAM_BOT_TOKEN = 123:ABC' "
+          "line instead of just '123:ABC'; a leading 'bot'; quotes; or a "
+          "truncated copy.\n  " + TOKEN_HELP),
 }
 
 
@@ -68,6 +84,60 @@ def notify_console(new_jobs, _settings):
         return
     print(f"\n{len(new_jobs)} new matching job(s):\n")
     print("\n".join(_format_lines(new_jobs)))
+
+
+def _token_complaint(token):
+    """Why this string cannot be a bot token, or None if it looks like one.
+
+    Never echoes the token: CI logs are public, and GitHub only masks the exact
+    secret value, not a mangled variant of it. Reports shape only.
+    """
+    if TELEGRAM_TOKEN_RE.match(token):
+        return None
+    if token.startswith("bot"):
+        return ('it starts with "bot" -- paste only the token itself, the '
+                'code adds the "bot" prefix to the URL')
+    if token.startswith(("http://", "https://")):
+        return "it looks like a URL -- paste only the token, not the API URL"
+    if ":" not in token:
+        return (f"it has no colon (got {len(token)} chars); a token looks like "
+                "123456789:AAHk9v-Wq...")
+    bot_id, _, secret = token.partition(":")
+    if not bot_id.isdigit():
+        return "the part before the colon must be the numeric bot id"
+    if len(secret) < 30:
+        return (f"the part after the colon is only {len(secret)} chars -- it "
+                "looks truncated")
+    return f"it does not match the expected format (got {len(token)} chars)"
+
+
+def validate_telegram_env():
+    """Check the Telegram secrets before any network call.
+
+    A malformed token otherwise costs a full 6700-posting fetch before failing,
+    and does so with Telegram's opaque 404.
+    """
+    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
+    if not token or not chat_id:
+        raise NotifyError(
+            "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set. Run "
+            "scripts/telegram_setup.py and add both as GitHub Actions secrets.")
+    complaint = _token_complaint(token)
+    if complaint:
+        raise NotifyError(f"TELEGRAM_BOT_TOKEN is malformed: {complaint}.\n"
+                          f"  {TOKEN_HELP}")
+    return token, chat_id
+
+
+def preflight(settings):
+    """Validate the configured channel's credentials up front.
+
+    Config errors should surface in a second, not after a full fetch.
+    """
+    channel = (settings.get("notifications") or {}).get("channel", "console")
+    if channel == "telegram":
+        validate_telegram_env()
 
 
 def _http_detail(exc):
@@ -159,15 +229,8 @@ def _send_telegram_text(token, chat_id, text, sleep=time.sleep):
 
 
 def notify_telegram(new_jobs, _settings, sleep=time.sleep):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
     # Secrets arrive via CI and often carry stray whitespace when pasted.
-    token = (token or "").strip()
-    chat_id = (chat_id or "").strip()
-    if not token or not chat_id:
-        raise NotifyError(
-            "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set. Run "
-            "scripts/telegram_setup.py and add both as GitHub Actions secrets.")
+    token, chat_id = validate_telegram_env()
     if not new_jobs:
         return
     for text in telegram_batches(_format_lines(new_jobs), len(new_jobs)):
