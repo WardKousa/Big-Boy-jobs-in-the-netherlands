@@ -13,6 +13,8 @@ Nothing is stored -- copy the printed chat id into your GitHub secrets.
 """
 
 import json
+import os
+import sys
 import urllib.error
 import urllib.request
 
@@ -26,9 +28,19 @@ def call(token, method):
 
 
 def main():
-    token = input("Paste your bot token (from BotFather): ").strip()
+    # Token can come from an argument, the env var, or an interactive prompt
+    # -- the prompt only works in a real terminal (input() EOFs elsewhere).
+    token = ""
+    if len(sys.argv) > 1:
+        token = sys.argv[1].strip()
     if not token:
-        print("No token given. Aborting.")
+        token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+    if not token and sys.stdin.isatty():
+        token = input("Paste your bot token (from BotFather): ").strip()
+    if not token:
+        print("No token given. Run one of:")
+        print("  python scripts/telegram_setup.py <BOT_TOKEN>")
+        print("  set TELEGRAM_BOT_TOKEN first, then run without arguments")
         return
 
     data = call(token, "getUpdates")
