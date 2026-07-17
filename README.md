@@ -5,7 +5,7 @@ Instead of scraping fragile career-page HTML, it reads the public JSON endpoints
 of the hiring platforms (ATS) those companies use — Greenhouse, Lever, Ashby,
 SmartRecruiters, Recruitee, Workday.
 
-Currently tracking **34 companies** across quant trading, big data/AI platforms,
+Currently tracking **43 companies** across quant trading, big data/AI platforms,
 fintech, and more (see `config/companies.yaml`).
 
 ## How it works
@@ -40,10 +40,19 @@ python -m jobtracker.run
   and adding an entry. The backlog at the bottom lists companies from the
   original wishlist that use custom systems still needing an adapter.
 - **`config/settings.yaml`** — your match rules:
-  - `include_keywords` — job titles must contain one of these
+  - `include_keywords` — role names that match on their own ("data engineer")
+  - `early_career_keywords` + `technical_keywords` — an early-career term
+    ("intern") only counts when the title *also* carries a technical signal.
+    On its own, "intern" matches every HR, Law and Media internship a large
+    employer posts (ASML alone floods ~30), burying the real matches.
   - `exclude_keywords` — seniority filter (senior/lead/etc.)
   - `locations` — NL cities + `netherlands`
   - `notifications.channel` — `console` | `telegram` | `email`
+
+  Keywords match whole-word and case-insensitively. Two consequences worth
+  knowing: `intern` does **not** match `internship` (list both), and short
+  ambiguous words are dangerous — `it` would match the pronoun in
+  "make it happen".
 
 ## Notifications
 
@@ -61,6 +70,17 @@ Secrets are read from **environment variables**, never hardcoded.
 
 **Email:** set `channel: email` and export `SMTP_HOST`, `SMTP_PORT`,
 `SMTP_USER`, `SMTP_PASS`, `EMAIL_TO` (for Gmail, use an App Password).
+
+**Verify delivery without waiting for a job to appear:**
+
+```bash
+python -m jobtracker.run --test-notify
+```
+
+Sends one fake alert through the configured channel. Worth doing after any
+secret change — otherwise the send path is only ever exercised the moment a
+real posting shows up, which is the worst time to discover a bad chat id.
+You can also run it from the Actions tab: **Run workflow → mode: test-notify**.
 
 ## Running for free on GitHub Actions
 
