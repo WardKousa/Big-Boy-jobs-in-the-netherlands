@@ -98,6 +98,9 @@ filters:
   # Comment out the list to keep all seniorities.
   exclude_keywords:
     - senior
+    # "Sr." / "Sr" -- eBay and others abbreviate, slipping past "senior".
+    # Whole-word matching means this cannot hit inside another word.
+    - sr
     - staff
     - principal
     - lead

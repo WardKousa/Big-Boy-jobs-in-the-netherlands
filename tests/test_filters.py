@@ -37,6 +37,18 @@ def test_rejects_excluded_seniority():
     assert filters.matches(job, FILTERS) is False
 
 
+def test_rejects_abbreviated_seniority():
+    """eBay writes "Sr." -- which "senior" does not catch."""
+    flt = {"include_keywords": ["software engineer"],
+           "exclude_keywords": ["senior", "sr"], "locations": []}
+    assert filters.matches(
+        _job("Sr. Frontend/Fullstack Software Engineer", "Amsterdam"),
+        flt) is False
+    # ...but must not reject a word merely containing those letters.
+    assert filters.matches(
+        _job("Software Engineer, SRE Platform", "Amsterdam"), flt) is True
+
+
 def test_rejects_wrong_location():
     job = _job("Data Engineer", "Remote - United States")
     assert filters.matches(job, FILTERS) is False
@@ -351,6 +363,56 @@ def test_fetch_all_contains_unexpected_adapter_exception():
         assert any("KeyError" in e for e in errors)
     finally:
         adapters.fetch_company = orig
+
+
+def test_workday_paginates_when_total_only_on_first_page():
+    """Nvidia/Philips/NXP/eBay report `total` on page 1 and 0 afterwards.
+    Re-reading it each page capped them at 40 jobs out of hundreds."""
+    pages = []
+
+    def fake_get_json(url, data=None, method="GET"):
+        offset = data["offset"]
+        remaining = 95 - offset
+        n = max(0, min(20, remaining))
+        pages.append(offset)
+        return {
+            # total only on the first page; 0 thereafter, like the real API
+            "total": 95 if offset == 0 else 0,
+            "jobPostings": [{"externalPath": f"/job/{offset + i}",
+                             "title": "Data Engineer", "locationsText": "NL",
+                             "bulletFields": [f"R-{offset + i}"]}
+                            for i in range(n)],
+        }
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_workday({"tenant": "t", "wd": "wd3", "site": "S"})
+        assert len(out) == 95, f"expected all 95 jobs, got {len(out)}"
+        assert pages[:3] == [0, 20, 40], "should keep paging past offset 40"
+    finally:
+        adapters._get_json = orig
+
+
+def test_workday_stops_when_a_page_is_empty():
+    """No `total` at all must still terminate, not spin to max_pages."""
+    calls = {"n": 0}
+
+    def fake_get_json(url, data=None, method="GET"):
+        calls["n"] += 1
+        if data["offset"] == 0:
+            return {"jobPostings": [{"externalPath": "/job/1", "title": "t",
+                                     "locationsText": "NL"}]}
+        return {"jobPostings": []}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_workday({"tenant": "t", "wd": "wd3", "site": "S"})
+        assert len(out) == 1
+        assert calls["n"] == 2, "should stop on the first empty page"
+    finally:
+        adapters._get_json = orig
 
 
 def test_workday_empty_bulletfields_does_not_crash():

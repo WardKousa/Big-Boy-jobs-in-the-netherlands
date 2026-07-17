@@ -41,7 +41,19 @@ other 40+ healthy companies.
 
 Paginated adapters (Workday, Eightfold, SmartRecruiters, Amazon) are capped
 (`MAX_WORKDAY_PAGES`, `MAX_EIGHTFOLD`). This is safe because results are
-newest-first, so anything posted between runs is still caught.
+newest-first — verified against Nvidia, where offset 0 is "Posted Today" and
+offset 1000 is "Posted 30+ Days Ago".
+
+Workday has a trap worth knowing: **several tenants report `total` only on the
+first page and `0` on every page after it** (Nvidia, Philips, NXP, eBay do;
+ASML doesn't). Re-reading `total` each page therefore made `offset >= total`
+fire on page 2 and silently capped those tenants at 40 jobs out of hundreds —
+no error, just missing jobs. `fetch_workday` keeps the first non-zero `total`.
+The page size cannot be raised; the cxs API rejects `limit > 20`. Server-side
+location facets exist but the ids are tenant-specific (Philips' Netherlands
+GUID 404s on NXP), so they aren't worth the fragility. Full pagination is why
+a run takes ~4 minutes rather than ~5 seconds; for a 3-hourly cron that's a
+good trade for not being blind to whole companies.
 
 **`filters.py`** — whole-word regex matching (`\bkeyword\b`), so "intern" doesn't
 match "international" and "lead" doesn't match "leading". Preserve this when

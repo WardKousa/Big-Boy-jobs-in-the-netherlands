@@ -24,7 +24,8 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 
 # Workday/Eightfold tenants can hold thousands of jobs. Results are newest-first,
 # so capping still catches anything newly posted between runs while bounding time.
-MAX_WORKDAY_PAGES = 60      # 60 * 20 = up to 1200 jobs per company
+WORKDAY_PAGE_SIZE = 20      # the cxs API rejects anything larger
+MAX_WORKDAY_PAGES = 110     # 110 * 20 = up to 2200 jobs (Nvidia reports ~2000)
 MAX_EIGHTFOLD = 1000
 
 
@@ -129,8 +130,9 @@ def fetch_workday(cfg):
     max_pages = cfg.get("max_pages", MAX_WORKDAY_PAGES)
     out = []
     offset = 0
+    total = 0
     for _ in range(max_pages):
-        body = {"limit": 20, "offset": offset, "searchText": ""}
+        body = {"limit": WORKDAY_PAGE_SIZE, "offset": offset, "searchText": ""}
         data = _get_json(api, data=body, method="POST")
         postings = data.get("jobPostings", []) if isinstance(data, dict) else []
         for j in postings:
@@ -143,9 +145,19 @@ def fetch_workday(cfg):
             bullets = j.get("bulletFields") or []
             out.append(_norm((bullets[0] if bullets else "") or path,
                              j.get("title"), loc, job_url))
-        total = data.get("total", 0) if isinstance(data, dict) else 0
-        offset += 20
-        if offset >= total or not postings:
+
+        # Nvidia, Philips, NXP and eBay report `total` only on the first page
+        # and 0 on every page after it. Re-reading it each time made
+        # "offset >= total" fire on page 2, capping every such tenant at 40
+        # jobs out of hundreds. Keep the first non-zero value we are given.
+        page_total = (data.get("total") or 0) if isinstance(data, dict) else 0
+        if page_total:
+            total = max(total, page_total)
+
+        offset += WORKDAY_PAGE_SIZE
+        if not postings:
+            break
+        if total and offset >= total:
             break
     return out
 
