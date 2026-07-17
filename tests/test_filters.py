@@ -1,11 +1,14 @@
-"""Unit tests for the matching logic (no network)."""
+"""Unit tests for the matching, notification, and fetch logic (no network)."""
 
+import io
+import json
 import os
 import sys
+import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from jobtracker import filters, notify, state  # noqa: E402
+from jobtracker import adapters, filters, notify, run, state  # noqa: E402
 
 FILTERS = {
     "include_keywords": ["data engineer", "machine learning"],
@@ -93,6 +96,179 @@ def test_split_new_only_returns_unseen():
     assert len(first) == 1
     second = state.split_new(jobs, seen)  # same job again
     assert len(second) == 0
+
+
+EARLY = {
+    "early_career_keywords": ["intern", "internship", "graduate"],
+    "technical_keywords": ["software", "data", "computer science"],
+    "locations": [],
+}
+
+
+def test_early_career_needs_technical_signal():
+    """'intern' alone must not admit every HR/Law internship a big employer
+    posts -- that flood is what buries the real matches."""
+    assert filters.matches(
+        _job("HR internship: support the Internships Office", "Veldhoven"),
+        EARLY) is False
+    assert filters.matches(
+        _job("Law | Accountancy internship: contract compliance", "Veldhoven"),
+        EARLY) is False
+
+
+def test_early_career_with_technical_signal_matches():
+    assert filters.matches(
+        _job("Software Engineering Internship: Python tool development", "NL"),
+        EARLY) is True
+    assert filters.matches(
+        _job("Applied Physics Internship: Data Science for Metrology", "NL"),
+        EARLY) is True
+
+
+def test_early_career_term_alone_is_not_enough_without_technical_list():
+    """With no technical list configured, behaviour stays legacy include-only."""
+    flt = {"include_keywords": ["data engineer"], "locations": []}
+    assert filters.matches(_job("Marketing Intern", "Amsterdam"), flt) is False
+
+
+def test_technical_keywords_do_not_include_ambiguous_pronoun():
+    """Regression: 'it' as a keyword matches the pronoun in 'make it happen'."""
+    import yaml
+    with open(os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "config", "settings.yaml"),
+            encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    tech = cfg["filters"]["technical_keywords"]
+    assert "it" not in [t.strip().lower() for t in tech]
+
+
+def test_intern_whole_word_does_not_match_internship():
+    """Both forms must be listed; \\bintern\\b does not cover 'internship'."""
+    flt = {"include_keywords": ["intern"], "locations": []}
+    assert filters.matches(_job("HR Internship", "Amsterdam"), flt) is False
+
+
+def _http_error(code, payload):
+    """An HTTPError whose body carries Telegram's JSON explanation."""
+    body = json.dumps(payload).encode()
+    return urllib.error.HTTPError(
+        "https://api.telegram.org/botX/sendMessage", code, "Bad Request",
+        {}, io.BytesIO(body))
+
+
+def test_telegram_error_surfaces_description_not_bare_status():
+    """The regression behind the CI failure: 'HTTP Error 400: Bad Request'
+    alone is unactionable; the body names the real problem."""
+    exc = _http_error(400, {"ok": False, "error_code": 400,
+                            "description": "Bad Request: chat not found"})
+    detail = notify._http_detail(exc)
+    assert "chat not found" in detail
+
+
+def test_telegram_400_raises_notify_error_with_hint():
+    def fake_urlopen(req, timeout=None):
+        raise _http_error(400, {"description": "Bad Request: chat not found"})
+
+    orig = notify.urllib.request.urlopen
+    notify.urllib.request.urlopen = fake_urlopen
+    try:
+        notify._send_telegram_text("tok", "bad", "hi", sleep=lambda s: None)
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "chat not found" in str(exc)
+        assert "TELEGRAM_CHAT_ID" in str(exc)
+    finally:
+        notify.urllib.request.urlopen = orig
+
+
+def test_telegram_retries_rate_limit_then_succeeds():
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _http_error(429, {"parameters": {"retry_after": 1}})
+
+        class R:
+            def __enter__(self): return io.BytesIO(b'{"ok":true}')
+            def __exit__(self, *a): return False
+        return R()
+
+    orig = notify.urllib.request.urlopen
+    notify.urllib.request.urlopen = fake_urlopen
+    try:
+        notify._send_telegram_text("tok", "1", "hi", sleep=lambda s: None)
+        assert calls["n"] == 2
+    finally:
+        notify.urllib.request.urlopen = orig
+
+
+def test_telegram_missing_secrets_raises_notify_error():
+    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+        os.environ.pop(key, None)
+    try:
+        notify.notify_telegram([_job("Data Engineer", "Amsterdam")], {})
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "TELEGRAM_BOT_TOKEN" in str(exc)
+
+
+def test_telegram_batches_stay_under_api_limit():
+    jobs = [{"company": f"C{i}", "tier": "S", "title": "Data Engineer " + "x" * 90,
+             "location": "Amsterdam, Netherlands",
+             "url": "https://example.com/" + "y" * 120} for i in range(60)]
+    texts = notify.telegram_batches(notify._format_lines(jobs), len(jobs))
+    assert texts, "expected at least one batch"
+    for t in texts:
+        assert len(t) <= 4096, f"batch of {len(t)} chars exceeds Telegram cap"
+        assert t.strip(), "empty batch would be rejected by Telegram"
+
+
+def test_telegram_batches_never_emits_empty_batch_for_long_line():
+    huge = "x" * 5000
+    texts = notify.telegram_batches([huge], 1)
+    assert all(t.strip() for t in texts)
+    assert len(texts) == 1
+
+
+def test_fetch_all_contains_unexpected_adapter_exception():
+    """One provider changing its JSON shape must not kill the whole run."""
+    orig = adapters.fetch_company
+
+    def boom(cfg):
+        if cfg["name"] == "Bad":
+            raise KeyError("locationsText")
+        return [{"company": cfg["name"], "source_id": "1", "title": "t",
+                 "location": "l", "url": "u"}]
+
+    adapters.fetch_company = boom
+    try:
+        jobs, errors = run.fetch_all([{"name": "Bad", "ats": "workday"},
+                                      {"name": "Good", "ats": "greenhouse"}])
+        assert len(jobs) == 1, "healthy company should still be fetched"
+        assert any("KeyError" in e for e in errors)
+    finally:
+        adapters.fetch_company = orig
+
+
+def test_workday_empty_bulletfields_does_not_crash():
+    posting = {"externalPath": "/job/X", "locationsText": "Amsterdam",
+               "title": "Data Engineer", "bulletFields": []}
+    captured = {}
+
+    def fake_get_json(url, data=None, method="GET"):
+        captured["hit"] = True
+        return {"jobPostings": [posting], "total": 1}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_workday(
+            {"tenant": "t", "wd": "wd3", "site": "S", "max_pages": 1})
+        assert len(out) == 1
+        assert out[0]["source_id"] == "/job/X"  # falls back to externalPath
+    finally:
+        adapters._get_json = orig
 
 
 if __name__ == "__main__":
