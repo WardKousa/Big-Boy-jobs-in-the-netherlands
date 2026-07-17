@@ -452,6 +452,76 @@ def test_workday_stops_when_a_page_is_empty():
         adapters._get_json = orig
 
 
+def test_tesla_state_transform_labels_nl_and_keeps_lookup_for_rest():
+    """NL location ids (from the geo tree) must render as "City, Netherlands"
+    -- Tesla's lookup strings only name the province, which the location
+    filter would miss for cities like Tilburg."""
+    state = {
+        "geo": [{"id": "3", "sites": [{"id": "NL", "cities": {
+            "Tilburg": ["321"], "Amsterdam": ["831"]}}]}],
+        "lookup": {"locations": {"321": "Tilburg, Noord-brabant",
+                                 "831": "Amsterdam, Zuid-holland",
+                                 "100": "Austin, Texas"}},
+        "listings": [
+            {"id": "1", "t": "Service Technician", "l": "321"},
+            {"id": "2", "t": "Software Engineer", "l": "831"},
+            {"id": "3", "t": "AI Engineer", "l": "100"},
+        ],
+    }
+    out = adapters._tesla_jobs_from_state(state)
+    by_id = {j["source_id"]: j for j in out}
+    assert by_id["1"]["location"] == "Tilburg, Netherlands"
+    assert by_id["2"]["location"] == "Amsterdam, Netherlands"
+    assert by_id["3"]["location"] == "Austin, Texas"
+    assert by_id["2"]["url"] == "https://www.tesla.com/careers/search/job/2"
+
+
+def test_jibe_paginates_until_total_count():
+    def fake_get_json(url, data=None, method="GET"):
+        page = int(url.split("page=")[1].split("&")[0])
+        n = 100 if page == 1 else 20
+        return {"totalCount": 120, "jobs": [
+            {"data": {"req_id": f"p{page}-{i}", "slug": f"p{page}-{i}",
+                      "title": "Data Engineer", "city": "Amsterdam",
+                      "country": "Netherlands",
+                      "full_location": "Amsterdam, Netherlands",
+                      "posted_date": "2026-07-01T00:00:00+0000"}}
+            for i in range(n)]}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_jibe({"host": "jobs.example.com",
+                                   "board": "acme", "location": "Netherlands"})
+        assert len(out) == 120
+        assert out[0]["url"] == "https://jobs.example.com/acme/jobs/p1-0"
+        assert out[0]["location"] == "Amsterdam, Netherlands"
+        assert out[0]["posted"]  # parsed, not empty
+    finally:
+        adapters._get_json = orig
+
+
+def test_optiver_pages_with_from_size_and_builds_absolute_urls():
+    def fake_get_json(url, data=None, method="GET"):
+        start = int(url.split("from=")[1].split("&")[0])
+        remaining = max(0, 40 - start)
+        n = min(16, remaining)
+        return {"totalCount": 40, "items": [
+            {"title": f"Job {start + i}", "location": "Amsterdam",
+             "href": f"/join-us/jobs/technology/amsterdam/job-{start + i}/"}
+            for i in range(n)]}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_optiver({})
+        assert len(out) == 40
+        assert out[0]["url"].startswith("https://www.optiver.com/join-us/")
+        assert out[0]["source_id"].startswith("/join-us/")
+    finally:
+        adapters._get_json = orig
+
+
 def test_workday_empty_bulletfields_does_not_crash():
     posting = {"externalPath": "/job/X", "locationsText": "Amsterdam",
                "title": "Data Engineer", "bulletFields": []}

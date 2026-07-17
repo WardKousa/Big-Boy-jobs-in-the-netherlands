@@ -8,6 +8,9 @@
 
 companies:
   # ---- quant trading ----
+  - name: "Optiver"
+    ats: optiver
+    tier: "S++"
   - name: "Jump Trading"
     ats: greenhouse
     slug: jumptrading
@@ -38,6 +41,15 @@ companies:
     tier: "S"
 
   # ---- big tech / AI ----
+  - name: "Tesla"
+    ats: tesla        # needs playwright + chromium (Akamai); warns if absent
+    tier: "S"
+  - name: "Booking.com"
+    ats: jibe
+    host: jobs.booking.com
+    board: booking
+    location: Netherlands
+    tier: "A+"
   - name: "Netflix"
     ats: eightfold
     host: netflix.eightfold.ai
@@ -207,15 +219,12 @@ companies:
 # Each needs a headless browser or reverse-engineered auth flow (out of scope
 # for this lightweight tracker). Status notes for a future push:
 #
-#   Optiver (S++)   - custom SPA, no public JSON found
 #   Google (S++)    - careers is a JS SPA; v3 API deprecated (404)
 #   Meta (S++)      - GraphQL POST needs signed doc_id
 #   Apple (S++)     - jobs.apple.com API returns 401 (needs CSRF/session)
 #   Microsoft (S+)  - gcsservices host unreachable from CI probe
 #   Uber (S)        - loadSearchJobsResults returns 403 (bot protection)
-#   Tesla (S)       - cua-api returns 403 (Akamai bot protection)
 #   Qualcomm (S)    - Workday site name not yet identified (422)
-#   Booking.com (A+)- custom system; SmartRecruiters tenant empty
 #   All Options     - endpoints not found
 #
 # SOLVED since this list was written (now in `companies` above):
@@ -223,6 +232,12 @@ companies:
 #   Maverick Derivatives -> greenhouse slug maverickderivatives. The board is
 #     valid but currently returns zero postings (HTTP 200, total 0); a wrong
 #     slug 404s instead, so this is "no openings", not a broken adapter.
+#   Optiver -> own API at www.optiver.com/en/api/v1/jobs (from/size paging,
+#     size capped at 16 server-side). Found embedded in the careers page HTML.
+#   Booking.com -> Jibe board at jobs.booking.com/api/jobs (plain GET JSON;
+#     the old "custom system" note was wrong).
+#   Tesla -> cua-api works from a real browser only (Akamai TLS/JS check);
+#     fetched headless via Playwright, see fetch_tesla in adapters.py.
 #   Adidas, Shell, TomTom, IKEA, IBM, ABB, Arcadis, Backbase, Workiva,
 #     Huawei, Ortec, CloudKitchens, SurePrep, Just Eat Takeaway
 #   Dutch banks: ING, ABN AMRO, Rabobank (custom/Eightfold-style, unconfirmed)

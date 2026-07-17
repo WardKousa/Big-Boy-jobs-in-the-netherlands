@@ -44,6 +44,21 @@ Paginated adapters (Workday, Eightfold, SmartRecruiters, Amazon) are capped
 newest-first — verified against Nvidia, where offset 0 is "Posted Today" and
 offset 1000 is "Posted 30+ Days Ago".
 
+Three companies have bespoke adapters found by reverse-engineering their sites:
+**Optiver** (own API at `www.optiver.com/en/api/v1/jobs`, Elasticsearch-style
+`from`/`size` paging, `size` silently capped at 16 — the endpoint is named in
+the careers page HTML as `apiEndpoint`); **Booking.com** via the reusable
+`jibe` adapter (`jobs.booking.com/api/jobs`, plain GET, `limit=100` honoured);
+**Tesla** (`fetch_tesla`), which must drive **headless Firefox** via
+Playwright: Akamai 403s every plain HTTP client, flags headless Chromium by
+its "HeadlessChrome" UA/client-hint brand, and flags even headed
+Playwright-Chromium by its automation fingerprint — Firefox passes. Don't
+fetch Tesla's state endpoint yourself from page JS either; only the SPA's own
+request carries the Akamai sensor data, so the adapter captures that response
+via `page.expect_response`. Without Playwright installed, Tesla degrades to a
+FetchError warning. CI installs `playwright` + `firefox` as a separate
+workflow step; `requirements.txt` stays PyYAML-only.
+
 Workday has a trap worth knowing: **several tenants report `total` only on the
 first page and `0` on every page after it** (Nvidia, Philips, NXP, eBay do;
 ASML doesn't). Re-reading `total` each page therefore made `offset >= total`

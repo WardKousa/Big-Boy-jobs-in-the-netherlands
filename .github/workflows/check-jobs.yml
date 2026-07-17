@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Tesla's careers API sits behind Akamai, which 403s every plain HTTP
+      # client. fetch_tesla drives headless Firefox instead; without this step
+      # the Tesla fetch degrades to a warning and the other companies proceed.
+      - name: Install browser for Akamai-gated boards (Tesla)
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps firefox
+
       - name: Run tests
         run: python tests/test_filters.py
 

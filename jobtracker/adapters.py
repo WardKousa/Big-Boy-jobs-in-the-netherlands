@@ -22,6 +22,7 @@ Stdlib only (urllib) so the tracker runs with zero third-party HTTP deps.
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
@@ -34,6 +35,9 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 WORKDAY_PAGE_SIZE = 20      # the cxs API rejects anything larger
 MAX_WORKDAY_PAGES = 110     # 110 * 20 = up to 2200 jobs (Nvidia reports ~2000)
 MAX_EIGHTFOLD = 1000
+OPTIVER_PAGE_SIZE = 16      # the API caps `size` at 16 whatever you ask for
+MAX_OPTIVER_PAGES = 40      # 40 * 16 = 640 (Optiver lists ~190 globally)
+MAX_JIBE_PAGES = 30         # 30 * 100 = 3000 jobs per Jibe board
 
 
 class FetchError(Exception):
@@ -284,6 +288,147 @@ def fetch_snap(cfg):
     return out
 
 
+def fetch_jibe(cfg):
+    """Jibe-powered career sites (Booking.com's jobs.booking.com).
+
+    Plain GET JSON API at /api/jobs. `limit` raises the page size, but page
+    through anyway in case a board outgrows one page. An optional `location`
+    narrows server-side (Booking lists ~50 NL jobs vs thousands globally).
+    """
+    host = cfg["host"]                      # e.g. jobs.booking.com
+    board = cfg.get("board", "booking")     # path segment of the job pages
+    location = cfg.get("location", "")
+    loc_param = f"&location={urllib.parse.quote(location)}" if location else ""
+    out = []
+    page = 1
+    while page <= MAX_JIBE_PAGES:
+        url = (f"https://{host}/api/jobs?page={page}&limit=100"
+               f"&sortBy=relevance&descending=false&internal=false{loc_param}")
+        data = _get_json(url)
+        jobs = data.get("jobs", []) if isinstance(data, dict) else []
+        for item in jobs:
+            j = item.get("data") or {}
+            slug = j.get("slug") or j.get("req_id")
+            job_url = f"https://{host}/{board}/jobs/{slug}"
+            out.append(_norm(j.get("req_id") or slug, j.get("title"),
+                             j.get("full_location") or ", ".join(
+                                 x for x in [j.get("city"), j.get("country")]
+                                 if x),
+                             job_url, j.get("posted_date")))
+        total = data.get("totalCount", 0) if isinstance(data, dict) else 0
+        if not jobs or len(out) >= total:
+            break
+        page += 1
+    return out
+
+
+def fetch_optiver(cfg):
+    """Optiver's own jobs API, found embedded in the careers page as
+    "apiEndpoint":"/en/api/v1/jobs".
+
+    Paging is Elasticsearch-style from/size, and `size` is capped server-side
+    at 16 no matter what you ask for -- so paging is mandatory, not optional.
+    The API also accepts &location=amsterdam, but we fetch every location and
+    let the normal filters decide, so the config stays declarative.
+    """
+    base = "https://www.optiver.com/en/api/v1/jobs"
+    out = []
+    start = 0
+    total = 0
+    for _ in range(MAX_OPTIVER_PAGES):
+        data = _get_json(f"{base}?from={start}&size={OPTIVER_PAGE_SIZE}")
+        items = data.get("items", []) if isinstance(data, dict) else []
+        if not items:
+            break
+        for j in items:
+            href = j.get("href") or ""
+            job_url = f"https://www.optiver.com{href}" if href.startswith("/") \
+                else href
+            # href encodes department/office/slug and is stable across
+            # re-publishes; componentID is not.
+            out.append(_norm(href or j.get("componentID"), j.get("title"),
+                             j.get("location"), job_url))
+        total = total or (data.get("totalCount") or 0)
+        start += OPTIVER_PAGE_SIZE
+        if total and start >= total:
+            break
+    return out
+
+
+def _tesla_jobs_from_state(state):
+    """Normalize Tesla's /cua-api/apps/careers/state payload.
+
+    Listings are compact ({t: title, l: location-id}); location ids resolve
+    through lookup.locations to "City, Province" strings that never name the
+    country. For NL ids (found by walking the geo tree for site "NL") we emit
+    "City, Netherlands" instead, so the standard location filter matches every
+    Dutch site -- including ones like Tilburg that aren't in the filter list
+    by city name.
+    """
+    nl_city = {}
+    for region in state.get("geo") or []:
+        for site in region.get("sites") or []:
+            if site.get("id") == "NL":
+                for city, ids in (site.get("cities") or {}).items():
+                    for lid in ids:
+                        nl_city[str(lid)] = city
+    locations = (state.get("lookup") or {}).get("locations") or {}
+    out = []
+    for j in state.get("listings") or []:
+        lid = str(j.get("l", ""))
+        if lid in nl_city:
+            loc = f"{nl_city[lid]}, Netherlands"
+        else:
+            loc = locations.get(lid, "")
+        jid = j.get("id")
+        out.append(_norm(jid, j.get("t"), loc,
+                         f"https://www.tesla.com/careers/search/job/{jid}"))
+    return out
+
+
+def fetch_tesla(cfg):
+    """Tesla careers via a real browser.
+
+    Akamai fronts www.tesla.com and 403s every plain HTTP client (curl and
+    urllib alike, any headers). Playwright-driven Chromium is also flagged --
+    headless via the "HeadlessChrome" UA/client-hint brand, and even headed
+    via the automation fingerprint. Headless Firefox passes cleanly (no
+    client hints, no headless tells), so that's what we drive. If Playwright
+    isn't installed the adapter degrades to a FetchError warning and the rest
+    of the run proceeds.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise FetchError(
+            "Tesla needs a browser to pass Akamai. Install with: "
+            "pip install playwright && playwright install firefox") from exc
+
+    try:
+        with sync_playwright() as p:
+            browser = p.firefox.launch(headless=True)
+            try:
+                page = browser.new_page()
+                # Don't fetch the state endpoint ourselves -- a hand-made
+                # request lacks the Akamai sensor data and gets an HTML
+                # challenge back. The careers SPA calls it during load with
+                # the sensor attached, so capture that response instead.
+                with page.expect_response(
+                        lambda r: "cua-api/apps/careers/state" in r.url,
+                        timeout=60000) as resp_info:
+                    page.goto("https://www.tesla.com/careers/search/",
+                              wait_until="domcontentloaded", timeout=60000)
+                state = resp_info.value.json()
+            finally:
+                browser.close()
+    except Exception as exc:
+        raise FetchError(f"tesla browser fetch failed: {exc}") from exc
+
+    if not isinstance(state, dict) or "listings" not in state:
+        raise FetchError("tesla: careers state JSON missing 'listings'")
+    return _tesla_jobs_from_state(state)
+
+
 def fetch_eightfold(cfg):
     """Eightfold.ai talent-portal API (used by Netflix and others)."""
     host = cfg["host"]          # e.g. netflix.eightfold.ai
@@ -320,6 +465,9 @@ ADAPTERS = {
     "atlassian": fetch_atlassian,
     "snap": fetch_snap,
     "eightfold": fetch_eightfold,
+    "optiver": fetch_optiver,
+    "jibe": fetch_jibe,
+    "tesla": fetch_tesla,
 }
 
 
