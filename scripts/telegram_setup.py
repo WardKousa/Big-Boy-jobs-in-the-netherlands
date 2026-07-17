@@ -63,15 +63,17 @@ def main():
                                  or chat.get("first_name", ""))
 
     if not chats:
-        print("\nNo messages found yet. Everyone who wants alerts should open")
-        print("the bot in Telegram and tap Start (or send it any message),")
-        print("then run this script again. Note: getUpdates only shows recent")
-        print("messages, so ask them to send a fresh one if theirs is old.")
+        print("\nNo messages found. Telegram discards bot messages after 24")
+        print("hours, so anyone missing here should send the bot a fresh")
+        print("message (anything, 'hi' works) and then rerun this script.")
         return
 
-    print(f"\nFound {len(chats)} chat(s) that have messaged the bot:")
+    print(f"\nFound {len(chats)} chat(s) with a message in the last 24 hours:")
     for cid, who in chats.items():
         print(f"  {cid}  ({who or 'unknown'})")
+    print("\nSomeone missing? Telegram discards messages older than 24 hours;")
+    print("have them send the bot a fresh one and rerun. Or they can message")
+    print("@userinfobot to read their own id and you add it by hand.")
 
     # Send a test message to each so everyone can confirm on their phone.
     for cid, who in chats.items():
