@@ -93,6 +93,10 @@ sort by `TIER_ORDER` (S++ → C, unknown last) so the best openings lead. Telegr
 messages are chunked under the 4096-char API cap. Secrets come from env vars
 only (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `SMTP_*`, `EMAIL_TO`) — the
 `enabled` flags in settings.yaml are vestigial and not read by the code.
+`TELEGRAM_CHAT_ID` is a comma-separated recipient list; pressing Start on a
+bot subscribes nobody, so every chat that should get alerts must be listed.
+Failures name recipients by position ("recipient #2 of 2"), never by id —
+CI logs are public.
 
 Delivery failures raise `NotifyError`. Always surface the provider's own
 message: urllib's `str(HTTPError)` is only "HTTP Error 400: Bad Request", while

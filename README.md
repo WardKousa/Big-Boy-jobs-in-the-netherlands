@@ -75,6 +75,20 @@ Secrets are read from **environment variables**, never hardcoded.
    export TELEGRAM_CHAT_ID=...
    ```
 
+**Alerts for more than one person:** pressing *Start* on the bot subscribes
+nobody — the bot only messages the chat ids listed in `TELEGRAM_CHAT_ID`.
+To add someone:
+
+1. They open the bot in Telegram and send it any message (fresh — the API
+   only shows recent ones).
+2. Run `python scripts/telegram_setup.py`; it lists every chat id that has
+   messaged the bot and sends each a test message.
+3. Set the `TELEGRAM_CHAT_ID` secret to the ids comma-separated: `111,222`.
+
+For a bigger audience, skip the id juggling: create a Telegram **channel**,
+add the bot as an admin who can post, set `TELEGRAM_CHAT_ID` to the channel's
+id, and people subscribe themselves.
+
 **Email:** set `channel: email` and export `SMTP_HOST`, `SMTP_PORT`,
 `SMTP_USER`, `SMTP_PASS`, `EMAIL_TO` (for Gmail, use an App Password).
 

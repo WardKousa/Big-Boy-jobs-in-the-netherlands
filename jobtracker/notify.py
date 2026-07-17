@@ -30,8 +30,9 @@ TOKEN_HELP = ("Get a fresh one from @BotFather (/mybots -> your bot -> API "
 # Operator hints for the Telegram errors that are actually worth acting on.
 # Telegram's own wording is accurate but doesn't say which secret to fix.
 TELEGRAM_HINTS = {
-    400: ("Check TELEGRAM_CHAT_ID. It must be the numeric id from "
-          "scripts/telegram_setup.py (negative for groups), not a @username."),
+    400: ("Check TELEGRAM_CHAT_ID. Each comma-separated entry must be a "
+          "numeric id from scripts/telegram_setup.py (negative for groups), "
+          "not a @username."),
     401: ("TELEGRAM_BOT_TOKEN is well-formed but Telegram does not recognise "
           "it -- most likely revoked or from a deleted bot. " + TOKEN_HELP),
     403: ("The bot cannot message this chat. Open the bot in Telegram and "
@@ -127,10 +128,16 @@ def validate_telegram_env():
 
     A malformed token otherwise costs a full 6700-posting fetch before failing,
     and does so with Telegram's opaque 404.
+
+    TELEGRAM_CHAT_ID may hold several recipients, comma-separated
+    ("111,222"). Pressing Start on a bot subscribes nobody to anything --
+    every chat the bot should message must be listed here explicitly.
+    Returns (token, [chat_ids]).
     """
     token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    chat_id = (os.environ.get("TELEGRAM_CHAT_ID") or "").strip()
-    if not token or not chat_id:
+    raw_ids = os.environ.get("TELEGRAM_CHAT_ID") or ""
+    chat_ids = [c.strip() for c in raw_ids.split(",") if c.strip()]
+    if not token or not chat_ids:
         raise NotifyError(
             "TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set. Run "
             "scripts/telegram_setup.py and add both as GitHub Actions secrets.")
@@ -138,7 +145,7 @@ def validate_telegram_env():
     if complaint:
         raise NotifyError(f"TELEGRAM_BOT_TOKEN is malformed: {complaint}.\n"
                           f"  {TOKEN_HELP}")
-    return token, chat_id
+    return token, chat_ids
 
 
 def preflight(settings):
@@ -241,11 +248,20 @@ def _send_telegram_text(token, chat_id, text, sleep=time.sleep):
 
 def notify_telegram(new_jobs, _settings, sleep=time.sleep):
     # Secrets arrive via CI and often carry stray whitespace when pasted.
-    token, chat_id = validate_telegram_env()
+    token, chat_ids = validate_telegram_env()
     if not new_jobs:
         return
-    for text in telegram_batches(_format_lines(new_jobs), len(new_jobs)):
-        _send_telegram_text(token, chat_id, text, sleep=sleep)
+    batches = telegram_batches(_format_lines(new_jobs), len(new_jobs))
+    for pos, chat_id in enumerate(chat_ids, 1):
+        for text in batches:
+            try:
+                _send_telegram_text(token, chat_id, text, sleep=sleep)
+            except NotifyError as exc:
+                # Identify the recipient by position, not value -- CI logs
+                # are public and the ids belong to real people's chats.
+                raise NotifyError(
+                    f"recipient #{pos} of {len(chat_ids)} in "
+                    f"TELEGRAM_CHAT_ID: {exc}") from exc
 
 
 def notify_email(new_jobs, _settings):

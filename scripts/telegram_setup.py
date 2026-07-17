@@ -2,9 +2,10 @@
 Telegram setup helper.
 
 1. Create a bot: message @BotFather -> /newbot -> copy the token it gives you.
-2. Open your new bot in Telegram and tap Start (or send it any message).
-3. Run this, pasting your token when asked. It finds your chat id and sends a
-   test message so you know it works.
+2. Everyone who should get alerts opens the bot in Telegram and taps Start
+   (or sends it any message) -- bots cannot start conversations themselves.
+3. Run this, pasting your token when asked. It lists every chat id that has
+   messaged the bot and sends each a test message so you know it works.
 
     python scripts/telegram_setup.py
 
@@ -12,6 +13,7 @@ Nothing is stored -- copy the printed chat id into your GitHub secrets.
 """
 
 import json
+import urllib.error
 import urllib.request
 
 API = "https://api.telegram.org/bot{token}/{method}"
@@ -36,33 +38,46 @@ def main():
         return
 
     results = data.get("result", [])
-    chat_ids = []
+    # Every distinct chat that has messaged the bot -- yours, a friend's, a
+    # group's. Each person who wants alerts must message the bot first (bots
+    # cannot start conversations).
+    chats = {}
     for upd in results:
         msg = upd.get("message") or upd.get("edited_message") or {}
         chat = msg.get("chat") or {}
         if chat.get("id") is not None:
-            chat_ids.append((chat["id"],
-                             chat.get("username") or chat.get("first_name", "")))
+            chats[chat["id"]] = (chat.get("username")
+                                 or chat.get("title")
+                                 or chat.get("first_name", ""))
 
-    if not chat_ids:
-        print("\nNo messages found yet. Open your bot in Telegram, tap Start")
-        print("(or send it any message), then run this script again.")
+    if not chats:
+        print("\nNo messages found yet. Everyone who wants alerts should open")
+        print("the bot in Telegram and tap Start (or send it any message),")
+        print("then run this script again. Note: getUpdates only shows recent")
+        print("messages, so ask them to send a fresh one if theirs is old.")
         return
 
-    chat_id, who = chat_ids[-1]
-    print(f"\nFound your chat id: {chat_id}  (for '{who}')")
+    print(f"\nFound {len(chats)} chat(s) that have messaged the bot:")
+    for cid, who in chats.items():
+        print(f"  {cid}  ({who or 'unknown'})")
 
-    # Send a test message.
-    payload = json.dumps({
-        "chat_id": chat_id,
-        "text": "✅ Job tracker connected. You'll get alerts here.",
-    }).encode()
-    req = urllib.request.Request(
-        API.format(token=token, method="sendMessage"),
-        data=payload, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        ok = json.load(r).get("ok")
-    print("Test message sent — check Telegram!" if ok else "Test send failed.")
+    # Send a test message to each so everyone can confirm on their phone.
+    for cid, who in chats.items():
+        payload = json.dumps({
+            "chat_id": cid,
+            "text": "✅ Job tracker connected. You'll get alerts here.",
+        }).encode()
+        req = urllib.request.Request(
+            API.format(token=token, method="sendMessage"),
+            data=payload, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                ok = json.load(r).get("ok")
+        except urllib.error.URLError:
+            ok = False
+        print(f"Test message to {who or cid}: {'sent' if ok else 'FAILED'}")
+
+    chat_id = ",".join(str(c) for c in chats)
 
     # Print each value alone on its line. A "NAME = value" layout invites
     # copying the whole line into the secret, which yields a mangled token and
@@ -74,7 +89,7 @@ def main():
     print("Value:")
     print(token)
     print("\nName:  TELEGRAM_CHAT_ID")
-    print("Value:")
+    print("Value:  (comma-separated; drop any id that shouldn't get alerts)")
     print(chat_id)
     print("\nThen verify without waiting for a real posting:")
     print("  python -m jobtracker.run --test-notify")

@@ -354,6 +354,78 @@ def test_telegram_retries_rate_limit_then_succeeds():
         notify.urllib.request.urlopen = orig
 
 
+def test_telegram_sends_every_batch_to_every_recipient():
+    """Comma-separated TELEGRAM_CHAT_ID fans out to each chat -- pressing
+    Start on a bot subscribes nobody; every recipient must be listed."""
+    os.environ["TELEGRAM_BOT_TOKEN"] = VALID_TOKEN
+    os.environ["TELEGRAM_CHAT_ID"] = " 111 , 222 "
+    sent = []
+    orig = notify._send_telegram_text
+    notify._send_telegram_text = (
+        lambda token, chat_id, text, sleep=None: sent.append(chat_id))
+    try:
+        notify.notify_telegram([_job("Data Engineer", "Amsterdam")], {})
+        assert sent == ["111", "222"]
+    finally:
+        notify._send_telegram_text = orig
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        os.environ.pop("TELEGRAM_CHAT_ID", None)
+
+
+def test_telegram_single_recipient_still_works():
+    os.environ["TELEGRAM_BOT_TOKEN"] = VALID_TOKEN
+    os.environ["TELEGRAM_CHAT_ID"] = "12345"
+    sent = []
+    orig = notify._send_telegram_text
+    notify._send_telegram_text = (
+        lambda token, chat_id, text, sleep=None: sent.append(chat_id))
+    try:
+        notify.notify_telegram([_job("Data Engineer", "Amsterdam")], {})
+        assert sent == ["12345"]
+    finally:
+        notify._send_telegram_text = orig
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        os.environ.pop("TELEGRAM_CHAT_ID", None)
+
+
+def test_telegram_chat_id_of_only_commas_counts_as_unset():
+    os.environ["TELEGRAM_BOT_TOKEN"] = VALID_TOKEN
+    os.environ["TELEGRAM_CHAT_ID"] = " , ,, "
+    try:
+        notify.validate_telegram_env()
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "not set" in str(exc)
+    finally:
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        os.environ.pop("TELEGRAM_CHAT_ID", None)
+
+
+def test_telegram_failure_names_recipient_position_not_value():
+    """A bad second id must be attributable without echoing anyone's chat id
+    into a public CI log."""
+    os.environ["TELEGRAM_BOT_TOKEN"] = VALID_TOKEN
+    os.environ["TELEGRAM_CHAT_ID"] = "111,222"
+
+    def fail_on_second(token, chat_id, text, sleep=None):
+        if chat_id == "222":
+            raise notify.NotifyError("Telegram rejected the message: "
+                                     "HTTP 400: chat not found")
+
+    orig = notify._send_telegram_text
+    notify._send_telegram_text = fail_on_second
+    try:
+        notify.notify_telegram([_job("Data Engineer", "Amsterdam")], {})
+        raise AssertionError("expected NotifyError")
+    except notify.NotifyError as exc:
+        assert "recipient #2 of 2" in str(exc)
+        assert "222" not in str(exc).replace("#2 of 2", "")
+    finally:
+        notify._send_telegram_text = orig
+        os.environ.pop("TELEGRAM_BOT_TOKEN", None)
+        os.environ.pop("TELEGRAM_CHAT_ID", None)
+
+
 def test_telegram_missing_secrets_raises_notify_error():
     for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
         os.environ.pop(key, None)
