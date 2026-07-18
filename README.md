@@ -5,7 +5,7 @@ Instead of scraping fragile career-page HTML, it reads the public JSON endpoints
 of the hiring platforms (ATS) those companies use — Greenhouse, Lever, Ashby,
 SmartRecruiters, Recruitee, Workday.
 
-Currently tracking **47 companies** across quant trading, big data/AI platforms,
+Currently tracking **48 companies** across quant trading, big data/AI platforms,
 fintech, banks, and more (see `config/companies.yaml`) — including Optiver,
 Tesla, Booking.com and ING, which don't use a standard ATS.
 

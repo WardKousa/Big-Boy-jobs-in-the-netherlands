@@ -199,6 +199,10 @@ companies:
     wd: wd3
     site: ASMLEXT1
     tier: "S"
+  - name: "CloudKitchens"
+    ats: greenhouse
+    slug: css        # City Storage Systems -- board name confirms CloudKitchens
+    tier: "B"
   - name: "Flexport"
     ats: greenhouse
     slug: flexport
@@ -247,7 +251,11 @@ companies:
 #   ING -> Radancy platform at careers.ing.com; /en/search-jobs/results
 #     answers plain GETs with JSON-wrapped server-rendered HTML.
 #   Adidas, Shell, TomTom, IKEA, IBM, ABB, Arcadis, Backbase, Workiva,
-#     Huawei, Ortec, CloudKitchens, SurePrep, Just Eat Takeaway
+#     Huawei, Ortec, SurePrep, Just Eat Takeaway, Personio
+#     (2026-07-19 sweep: none answer the 6 standard ATS APIs or reveal a
+#     Workday tenant via root redirect. Personio's recruitee board and
+#     Uber's SmartRecruiters tenant are sandboxes -- "API Job Musterstr 1" /
+#     "Test UAT" -- do not add them.)
 #   Dutch banks still open: ABN AMRO, Rabobank (no ATS fingerprint found on
 #     werkenbijabnamro.nl / rabobank.jobs -- likely SPAs, need browser probe)
 # --------------------------------------------------------------------------
