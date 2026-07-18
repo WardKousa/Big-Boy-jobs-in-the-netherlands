@@ -474,6 +474,55 @@ def test_fetch_all_contains_unexpected_adapter_exception():
         adapters.fetch_company = orig
 
 
+RADANCY_ITEM_HTML = """
+<li class="search-results-item vacancy-item">
+  <a href="/en/job/amsterdam/ai-finance-transformation-intern/3121/999" data-job-id="999">
+    <h2 class="vacancy-item__title">AI &amp; Finance Transformation Intern</h2>
+  </a>
+  <ul><li><span class="job-location">Amsterdam, Netherlands</span></li></ul>
+  <a href="/en/job/amsterdam/ai-finance-transformation-intern/3121/999" data-job-id="999" class="btn btn-icon">
+    <span class="sr-only">Show job</span>
+  </a>
+</li>
+"""
+
+
+def test_radancy_parses_items_and_unescapes_entities():
+    """ING titles arrive HTML-escaped ("AI &amp; Finance..."); the alert must
+    show the real text, and the btn-icon anchor (same data-job-id, no h2)
+    must not produce a duplicate."""
+    def fake_get_json(url, data=None, method="GET"):
+        return {"results": RADANCY_ITEM_HTML}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_radancy({"host": "careers.ing.com"})
+        assert len(out) == 1
+        assert out[0]["title"] == "AI & Finance Transformation Intern"
+        assert out[0]["location"] == "Amsterdam, Netherlands"
+        assert out[0]["source_id"] == "999"
+        assert out[0]["url"].startswith("https://careers.ing.com/en/job/")
+    finally:
+        adapters._get_json = orig
+
+
+def test_radancy_stops_on_short_page():
+    calls = {"n": 0}
+
+    def fake_get_json(url, data=None, method="GET"):
+        calls["n"] += 1
+        return {"results": RADANCY_ITEM_HTML}  # 1 item < page size
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        adapters.fetch_radancy({"host": "careers.ing.com"})
+        assert calls["n"] == 1, "a short page must end pagination"
+    finally:
+        adapters._get_json = orig
+
+
 def test_workday_paginates_when_total_only_on_first_page():
     """Nvidia/Philips/NXP/eBay report `total` on page 1 and 0 afterwards.
     Re-reading it each page capped them at 40 jobs out of hundreds."""

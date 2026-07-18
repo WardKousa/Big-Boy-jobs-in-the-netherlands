@@ -19,6 +19,7 @@ paging bug was fixed) while being months old.
 Stdlib only (urllib) so the tracker runs with zero third-party HTTP deps.
 """
 
+import html
 import json
 import re
 import urllib.error
@@ -38,6 +39,16 @@ MAX_EIGHTFOLD = 1000
 OPTIVER_PAGE_SIZE = 16      # the API caps `size` at 16 whatever you ask for
 MAX_OPTIVER_PAGES = 40      # 40 * 16 = 640 (Optiver lists ~190 globally)
 MAX_JIBE_PAGES = 30         # 30 * 100 = 3000 jobs per Jibe board
+RADANCY_PAGE_SIZE = 100
+MAX_RADANCY_PAGES = 30      # 30 * 100 = 3000 jobs (ING lists ~750 globally)
+
+# One search-result item in Radancy's server-rendered list: the title anchor
+# (carrying data-job-id) followed by its job-location span. The btn-icon
+# anchors also carry data-job-id but contain no <h2>, so they can't match.
+RADANCY_ITEM_RE = re.compile(
+    r'<a href="(/[^"]*?/job/[^"]+)" data-job-id="(\d+)">\s*'
+    r'<h2[^>]*>([^<]+)</h2>\s*</a>.*?'
+    r'<span class="job-location">([^<]*)</span>', re.S)
 
 
 class FetchError(Exception):
@@ -288,6 +299,38 @@ def fetch_snap(cfg):
     return out
 
 
+def fetch_radancy(cfg):
+    """Radancy-powered career sites (ING's careers.ing.com).
+
+    The search endpoint answers plain GETs with JSON, but the values are
+    server-rendered HTML fragments -- so this parses markup, not an API
+    schema. The structure (title anchor with data-job-id + job-location span)
+    is what the site itself renders, which makes it as stable as the site.
+    No total count is exposed; page until a short page.
+    """
+    host = cfg["host"]                      # e.g. careers.ing.com
+    prefix = cfg.get("path", "/en")         # locale prefix of the search app
+    out = []
+    seen_ids = set()
+    for page in range(1, MAX_RADANCY_PAGES + 1):
+        url = (f"https://{host}{prefix}/search-jobs/results?ActiveFacetID=0"
+               f"&CurrentPage={page}&RecordsPerPage={RADANCY_PAGE_SIZE}"
+               "&SearchResultsModuleName=Search+Results"
+               "&SearchFiltersModuleName=Search+Filters")
+        data = _get_json(url)
+        found = RADANCY_ITEM_RE.findall(
+            data.get("results", "") if isinstance(data, dict) else "")
+        for href, jid, title, loc in found:
+            if jid in seen_ids:
+                continue
+            seen_ids.add(jid)
+            out.append(_norm(jid, html.unescape(title),
+                             html.unescape(loc), f"https://{host}{href}"))
+        if len(found) < RADANCY_PAGE_SIZE:
+            break
+    return out
+
+
 def fetch_jibe(cfg):
     """Jibe-powered career sites (Booking.com's jobs.booking.com).
 
@@ -468,6 +511,7 @@ ADAPTERS = {
     "optiver": fetch_optiver,
     "jibe": fetch_jibe,
     "tesla": fetch_tesla,
+    "radancy": fetch_radancy,
 }
 
 

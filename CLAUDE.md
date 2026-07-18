@@ -44,7 +44,11 @@ Paginated adapters (Workday, Eightfold, SmartRecruiters, Amazon) are capped
 newest-first — verified against Nvidia, where offset 0 is "Posted Today" and
 offset 1000 is "Posted 30+ Days Ago".
 
-Three companies have bespoke adapters found by reverse-engineering their sites:
+Several companies have bespoke adapters found by reverse-engineering their
+sites. **ING** uses the reusable `radancy` adapter: Radancy's
+`/en/search-jobs/results` endpoint answers plain GETs with JSON whose values
+are server-rendered HTML fragments, so the adapter parses markup
+(`RADANCY_ITEM_RE`) and must `html.unescape` titles. The others:
 **Optiver** (own API at `www.optiver.com/en/api/v1/jobs`, Elasticsearch-style
 `from`/`size` paging, `size` silently capped at 16 — the endpoint is named in
 the careers page HTML as `apiEndpoint`); **Booking.com** via the reusable

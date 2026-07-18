@@ -204,6 +204,12 @@ companies:
     slug: flexport
     tier: "A+"
 
+  # ---- banks ----
+  - name: "ING"
+    ats: radancy
+    host: careers.ing.com
+    tier: "A"
+
   # ---- telecom / other ----
   - name: "KPN"
     ats: smartrecruiters
@@ -238,7 +244,10 @@ companies:
 #     the old "custom system" note was wrong).
 #   Tesla -> cua-api works from a real browser only (Akamai TLS/JS check);
 #     fetched headless via Playwright, see fetch_tesla in adapters.py.
+#   ING -> Radancy platform at careers.ing.com; /en/search-jobs/results
+#     answers plain GETs with JSON-wrapped server-rendered HTML.
 #   Adidas, Shell, TomTom, IKEA, IBM, ABB, Arcadis, Backbase, Workiva,
 #     Huawei, Ortec, CloudKitchens, SurePrep, Just Eat Takeaway
-#   Dutch banks: ING, ABN AMRO, Rabobank (custom/Eightfold-style, unconfirmed)
+#   Dutch banks still open: ABN AMRO, Rabobank (no ATS fingerprint found on
+#     werkenbijabnamro.nl / rabobank.jobs -- likely SPAs, need browser probe)
 # --------------------------------------------------------------------------
