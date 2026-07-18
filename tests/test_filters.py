@@ -474,6 +474,106 @@ def test_fetch_all_contains_unexpected_adapter_exception():
         adapters.fetch_company = orig
 
 
+def test_pcsx_maps_positions_and_paginates():
+    """Microsoft's Eightfold pcsx API: data nested under 'data', page fixed
+    at whatever the server returns, postedTs is epoch seconds."""
+    def fake_get_json(url, data=None, method="GET", headers=None):
+        start = int(url.split("start=")[1].split("&")[0])
+        remaining = 24 - start
+        n = max(0, min(10, remaining))
+        return {"data": {"count": 24, "positions": [
+            {"id": 100 + start + i, "name": "Data Scientist",
+             "locations": ["Netherlands, Amsterdam"],
+             "positionUrl": f"/careers/job/{100 + start + i}",
+             "postedTs": 1783942116}
+            for i in range(n)]}}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_pcsx({"host": "apply.careers.microsoft.com",
+                                   "domain": "microsoft.com",
+                                   "location": "Netherlands"})
+        assert len(out) == 24
+        assert out[0]["url"].startswith("https://apply.careers.microsoft.com/")
+        assert out[0]["posted"]  # epoch parsed
+    finally:
+        adapters._get_json = orig
+
+
+def test_uber_maps_results_and_flattens_locations():
+    def fake_get_json(url, data=None, method="GET", headers=None):
+        assert headers and headers.get("x-csrf-token") == "x"
+        page = data["params"]["page"]
+        if page > 0:
+            return {"data": {"results": [], "totalResults": {"low": 2}}}
+        return {"data": {"totalResults": {"low": 2}, "results": [
+            {"id": 1, "title": "Software Engineer",
+             "allLocations": [{"city": "Amsterdam", "countryName": "Netherlands"}],
+             "creationDate": "2026-06-19T15:11:33.000Z"},
+            {"id": 2, "title": "Data Scientist",
+             "allLocations": [{"city": "Amsterdam", "countryName": "Netherlands"}],
+             "creationDate": "2026-06-19T15:11:33.000Z"}]}}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_uber({})
+        assert len(out) == 2
+        assert out[0]["location"] == "Amsterdam, Netherlands"
+        assert out[0]["url"].endswith("/careers/list/1/")
+    finally:
+        adapters._get_json = orig
+
+
+def test_phenom_reads_refine_search_and_builds_job_url():
+    def fake_get_json(url, data=None, method="GET", headers=None):
+        assert url.endswith("/widgets")
+        offset = data["from"]
+        if offset > 0:
+            return {"refineSearch": {"totalHits": 1, "data": {"jobs": []}}}
+        return {"refineSearch": {"totalHits": 1, "data": {"jobs": [
+            {"jobId": "R_050311", "title": "Product Owner",
+             "city": "Amsterdam", "country": "Netherlands",
+             "postedDate": "2026-06-10T00:00:00.000+0000"}]}}}
+
+    orig = adapters._get_json
+    adapters._get_json = fake_get_json
+    try:
+        out = adapters.fetch_phenom({"host": "careers.justeattakeaway.com",
+                                     "lang": "en_global", "lang_path": "en"})
+        assert len(out) == 1
+        assert out[0]["location"] == "Amsterdam, Netherlands"
+        assert out[0]["url"] == ("https://careers.justeattakeaway.com/"
+                                 "global/en/job/R_050311")
+        assert out[0]["posted"]
+    finally:
+        adapters._get_json = orig
+
+
+def test_google_extracts_id_and_title_from_result_slug():
+    page_html = (
+        'x <a href="/about/careers/applications/jobs/results/'
+        '105742843280007878-ai-sales-specialist-iii-google-cloud">y</a> '
+        'z jobs/results/108077358694441670-electrical-technician q')
+
+    def fake_get_text(url):
+        return page_html if "page=1" in url else ""
+
+    orig = adapters._get_text
+    adapters._get_text = fake_get_text
+    try:
+        out = adapters.fetch_google({"query": "Netherlands",
+                                     "location_label": "Netherlands"})
+        assert len(out) == 2
+        assert out[0]["source_id"] == "105742843280007878"
+        assert out[0]["title"] == "Ai Sales Specialist Iii Google Cloud"
+        assert out[0]["location"] == "Netherlands"
+        assert "105742843280007878-ai-sales" in out[0]["url"]
+    finally:
+        adapters._get_text = orig
+
+
 RADANCY_ITEM_HTML = """
 <li class="search-results-item vacancy-item">
   <a href="/en/job/amsterdam/ai-finance-transformation-intern/3121/999" data-job-id="999">

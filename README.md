@@ -5,15 +5,16 @@ Instead of scraping fragile career-page HTML, it reads the public JSON endpoints
 of the hiring platforms (ATS) those companies use — Greenhouse, Lever, Ashby,
 SmartRecruiters, Recruitee, Workday.
 
-Currently tracking **48 companies** across quant trading, big data/AI platforms,
-fintech, banks, and more (see `config/companies.yaml`) — including Optiver,
-Tesla, Booking.com and ING, which don't use a standard ATS.
+Currently tracking **55 companies** across quant trading, big tech, big data/AI
+platforms, fintech, banks, and more (see `config/companies.yaml`) — including
+Optiver, Google, Meta, Microsoft, Uber, Tesla, Booking.com, Shell, ING and Just
+Eat Takeaway, none of which use a standard ATS.
 
-One special case: Tesla's careers API sits behind Akamai bot protection, which
-rejects every plain HTTP client. Its adapter drives headless Firefox via
-Playwright (`pip install playwright && playwright install firefox`); if
-Playwright isn't installed, Tesla is skipped with a warning and everything
-else still runs.
+Two of them — **Tesla** (Akamai bot protection) and **Meta** (a per-page token)
+— can only be reached from a real browser, so their adapters drive headless
+Firefox via Playwright (`pip install playwright && playwright install firefox`).
+If Playwright isn't installed those two are skipped with a warning and every
+other company still runs.
 
 ## How it works
 

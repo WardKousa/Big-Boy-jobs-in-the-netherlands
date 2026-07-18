@@ -39,6 +39,7 @@ MAX_EIGHTFOLD = 1000
 OPTIVER_PAGE_SIZE = 16      # the API caps `size` at 16 whatever you ask for
 MAX_OPTIVER_PAGES = 40      # 40 * 16 = 640 (Optiver lists ~190 globally)
 MAX_JIBE_PAGES = 30         # 30 * 100 = 3000 jobs per Jibe board
+MAX_PCSX_RESULTS = 500      # pcsx pages are pinned at 10; NL counts are small
 RADANCY_PAGE_SIZE = 100
 MAX_RADANCY_PAGES = 30      # 30 * 100 = 3000 jobs (ING lists ~750 globally)
 
@@ -50,13 +51,31 @@ RADANCY_ITEM_RE = re.compile(
     r'<h2[^>]*>([^<]+)</h2>\s*</a>.*?'
     r'<span class="job-location">([^<]*)</span>', re.S)
 
+MAX_GOOGLE_PAGES = 15
+# Google server-renders NL results into the careers HTML as
+# jobs/results/<numeric-id>-<title-slug>. The slug is the only reliably
+# machine-readable title on the page.
+GOOGLE_LINK_RE = re.compile(r'jobs/results/(\d+)-([a-z0-9-]+)')
+
 
 class FetchError(Exception):
     """Raised when a provider endpoint cannot be read."""
 
 
-def _get_json(url, data=None, method="GET"):
-    headers = {"User-Agent": UA, "Accept": "application/json"}
+def _get_text(url):
+    headers = {"User-Agent": UA, "Accept": "text/html"}
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            return r.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError,
+            ConnectionError) as exc:
+        raise FetchError(f"{url}: {exc}") from exc
+
+
+def _get_json(url, data=None, method="GET", headers=None):
+    headers = {"User-Agent": UA, "Accept": "application/json",
+               **(headers or {})}
     if data is not None:
         headers["Content-Type"] = "application/json"
         data = json.dumps(data).encode()
@@ -299,6 +318,137 @@ def fetch_snap(cfg):
     return out
 
 
+def fetch_phenom(cfg):
+    """Phenom-powered career sites (Just Eat Takeaway, ABB).
+
+    POST /widgets with ddoKey=refineSearch returns JSON job lists. The
+    server-side country filter keeps giant multinationals to their NL
+    postings. Job pages live at /global/<lang>/job/<jobId> on the same host.
+    """
+    host = cfg["host"]                  # e.g. careers.justeattakeaway.com
+    lang = cfg.get("lang", "en")        # JET uses en_global, ABB en
+    country = cfg.get("country", "Netherlands")
+    lang_path = cfg.get("lang_path", "en")
+    out = []
+    offset = 0
+    while offset < 1000:
+        body = {"lang": lang, "deviceType": "desktop", "country": "global",
+                "ddoKey": "refineSearch", "sortBy": "", "from": offset,
+                "jobs": True, "counts": True,
+                "all_fields": ["category", "country", "city"],
+                "size": 50, "clearAll": False, "jdsource": "facets",
+                "isSliderEnable": False, "pageName": "search-results",
+                "keywords": "", "global": True,
+                "selected_fields": {"country": [country]}, "locationData": {}}
+        d = _get_json(f"https://{host}/widgets", data=body, method="POST")
+        rs = d.get("refineSearch", {}) if isinstance(d, dict) else {}
+        jobs = (rs.get("data") or {}).get("jobs") or []
+        for j in jobs:
+            loc = ", ".join(x for x in [j.get("city"), j.get("country")] if x)
+            jid = j.get("jobId")
+            out.append(_norm(jid, j.get("title"), loc,
+                             f"https://{host}/global/{lang_path}/job/{jid}",
+                             j.get("postedDate")))
+        total = rs.get("totalHits") or 0
+        offset += 50
+        if not jobs or offset >= total:
+            break
+    return out
+
+
+def fetch_google(cfg):
+    """Google careers, server-rendered so plain HTTP works.
+
+    Results for a location are baked into the HTML as
+    jobs/results/<id>-<title-slug>. There's no clean title element, so the
+    slug is the title source (loses acronym casing -- "III" -> "Iii" -- but
+    it's readable). Location isn't per-card in the markup; the page is already
+    filtered to `query` so we label it that way for the location filter.
+    """
+    query = cfg.get("query", "Netherlands")
+    label = cfg.get("location_label", query)
+    base = ("https://www.google.com/about/careers/applications/jobs/results/"
+            f"?location={urllib.parse.quote(query)}")
+    out = []
+    seen = set()
+    for page in range(1, MAX_GOOGLE_PAGES + 1):
+        htmltext = _get_text(f"{base}&page={page}")
+        found = GOOGLE_LINK_RE.findall(htmltext)
+        new = [(jid, slug) for jid, slug in found if jid not in seen]
+        for jid, slug in new:
+            seen.add(jid)
+            title = slug.replace("-", " ").strip().title()
+            out.append(_norm(
+                jid, title, label,
+                f"https://www.google.com/about/careers/applications/"
+                f"jobs/results/{jid}-{slug}"))
+        if not new:
+            break
+    return out
+
+
+def fetch_uber(cfg):
+    """Uber's careers API, pre-filtered to the Netherlands.
+
+    The endpoint 403s without a CSRF header, but accepts the literal value
+    "x" -- the check only tests presence. Results carry creationDate for age.
+    """
+    url = "https://www.uber.com/api/loadSearchJobsResults?localeCode=en"
+    out = []
+    page = 0
+    while page < 20:
+        body = {"params": {"location": [{"country": "NLD"}],
+                           "page": page, "limit": 100}}
+        d = _get_json(url, data=body, method="POST",
+                      headers={"x-csrf-token": "x"})
+        data = d.get("data", {}) if isinstance(d, dict) else {}
+        results = data.get("results") or []
+        for p in results:
+            locs = "; ".join(
+                ", ".join(x for x in [l.get("city"), l.get("countryName")] if x)
+                for l in (p.get("allLocations") or []))
+            out.append(_norm(p.get("id"), p.get("title"), locs,
+                             f"https://www.uber.com/global/en/careers/list/{p.get('id')}/",
+                             p.get("creationDate")))
+        total = data.get("totalResults") or {}
+        total_n = total.get("low", 0) if isinstance(total, dict) else total
+        page += 1
+        if not results or len(out) >= total_n:
+            break
+    return out
+
+
+def fetch_pcsx(cfg):
+    """Eightfold's newer "pcsx" frontend API (Microsoft's careers site).
+
+    Plain GET, response nested under "data". Page size is fixed at 10 no
+    matter what num= asks for, so paginate with start. postedTs is epoch
+    seconds. The classic /api/apply/v2/jobs endpoint 403s on these hosts.
+    """
+    host = cfg["host"]          # e.g. apply.careers.microsoft.com
+    domain = cfg["domain"]      # e.g. microsoft.com
+    location = cfg.get("location", "")
+    loc_q = urllib.parse.quote(location)
+    out = []
+    start = 0
+    while start < MAX_PCSX_RESULTS:
+        url = (f"https://{host}/api/pcsx/search?domain={domain}&query="
+               f"&location={loc_q}&start={start}")
+        data = (_get_json(url) or {}).get("data") or {}
+        positions = data.get("positions") or []
+        for p in positions:
+            purl = p.get("positionUrl") or ""
+            job_url = f"https://{host}{purl}" if purl.startswith("/") else purl
+            out.append(_norm(p.get("id"), p.get("name"),
+                             "; ".join(p.get("locations") or []),
+                             job_url, p.get("postedTs")))
+        count = data.get("count") or 0
+        start += len(positions) or 10
+        if not positions or start >= count:
+            break
+    return out
+
+
 def fetch_radancy(cfg):
     """Radancy-powered career sites (ING's careers.ing.com).
 
@@ -429,6 +579,75 @@ def _tesla_jobs_from_state(state):
     return out
 
 
+def _browser_eval(url, js, wait_selector=None):
+    """Load `url` in headless Firefox and return the result of evaluating `js`.
+
+    Shared by the adapters that must run same-origin JS (a bot wall the plain
+    client can't pass, or an API needing page-held tokens). Firefox is used
+    because it has none of Chromium's headless/automation tells. If Playwright
+    is missing, the caller's FetchError degrades the company to a warning.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise FetchError(
+            "needs a browser. Install with: "
+            "pip install playwright && playwright install firefox") from exc
+    with sync_playwright() as p:
+        browser = p.firefox.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            if wait_selector:
+                page.wait_for_selector(wait_selector, timeout=30000)
+            return page.evaluate(js)
+        finally:
+            browser.close()
+
+
+_META_JS = r"""async () => {
+  const html = document.documentElement.innerHTML;
+  const lsd = (html.match(/"LSD",\[\],\{"token":"([^"]+)"/) || [])[1];
+  if (!lsd) return { error: "no lsd token" };
+  const vars = { search_input: { q: null, divisions: [], offices: [], roles: [],
+    leadership_levels: [], saved_jobs: [], saved_searches: [], sub_teams: [],
+    teams: [], is_leadership: false, is_remote_only: false, sort_by_new: false,
+    results_per_page: null }, viewasUserID: null, isLoggedIn: false };
+  const body = new URLSearchParams({ lsd, doc_id: "27129360303422352",
+    fb_api_req_friendly_name: "CareersJobSearchResultsV2DataQuery",
+    variables: JSON.stringify(vars), __a: "1" });
+  const r = await fetch("/graphql", { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+               "x-fb-lsd": lsd }, body });
+  const d = JSON.parse(await r.text());
+  return (d.data && d.data.job_search_with_featured_jobs_v2
+          && d.data.job_search_with_featured_jobs_v2.all_jobs) || [];
+}"""
+
+
+def fetch_meta(cfg):
+    """Meta careers via its GraphQL search, replayed inside the page.
+
+    metacareers.com/graphql needs an `lsd` token minted per page load and a
+    same-origin request, so a plain client can't call it. The browser scrapes
+    the token and replays CareersJobSearchResultsV2DataQuery, which returns
+    every job in one response; locations are plain strings we filter normally.
+    """
+    jobs = _browser_eval("https://www.metacareers.com/jobs", _META_JS,
+                         wait_selector=None)
+    if isinstance(jobs, dict) and jobs.get("error"):
+        raise FetchError(f"meta: {jobs['error']}")
+    if not isinstance(jobs, list):
+        raise FetchError("meta: unexpected GraphQL response shape")
+    out = []
+    for j in jobs:
+        jid = j.get("id")
+        out.append(_norm(jid, j.get("title"),
+                         "; ".join(j.get("locations") or []),
+                         f"https://www.metacareers.com/jobs/{jid}/"))
+    return out
+
+
 def fetch_tesla(cfg):
     """Tesla careers via a real browser.
 
@@ -512,6 +731,11 @@ ADAPTERS = {
     "jibe": fetch_jibe,
     "tesla": fetch_tesla,
     "radancy": fetch_radancy,
+    "uber": fetch_uber,
+    "pcsx": fetch_pcsx,
+    "phenom": fetch_phenom,
+    "meta": fetch_meta,
+    "google": fetch_google,
 }
 
 

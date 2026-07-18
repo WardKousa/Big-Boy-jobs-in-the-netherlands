@@ -42,7 +42,24 @@ companies:
 
   # ---- big tech / AI ----
   - name: "Tesla"
-    ats: tesla        # needs playwright + chromium (Akamai); warns if absent
+    ats: tesla        # needs playwright + firefox (Akamai); warns if absent
+    tier: "S"
+  - name: "Meta"
+    ats: meta         # needs playwright + firefox (per-page lsd token)
+    tier: "S+"
+  - name: "Google"
+    ats: google
+    query: Netherlands
+    location_label: "Netherlands"
+    tier: "S"
+  - name: "Microsoft"
+    ats: pcsx
+    host: apply.careers.microsoft.com
+    domain: microsoft.com
+    location: Netherlands
+    tier: "S+"
+  - name: "Uber"
+    ats: uber
     tier: "S"
   - name: "Booking.com"
     ats: jibe
@@ -214,6 +231,26 @@ companies:
     host: careers.ing.com
     tier: "A"
 
+  # ---- industry / other ----
+  - name: "Just Eat Takeaway"
+    ats: phenom
+    host: careers.justeattakeaway.com
+    lang: en_global
+    lang_path: en
+    tier: "A"
+  - name: "ABB"
+    ats: phenom
+    host: careers.abb
+    lang: en
+    lang_path: en
+    tier: "B"
+  - name: "Shell"
+    ats: workday
+    tenant: shell
+    wd: wd3
+    site: shellcareers
+    tier: "A"
+
   # ---- telecom / other ----
   - name: "KPN"
     ats: smartrecruiters
@@ -229,13 +266,17 @@ companies:
 # Each needs a headless browser or reverse-engineered auth flow (out of scope
 # for this lightweight tracker). Status notes for a future push:
 #
-#   Google (S++)    - careers is a JS SPA; v3 API deprecated (404)
-#   Meta (S++)      - GraphQL POST needs signed doc_id
 #   Apple (S++)     - jobs.apple.com API returns 401 (needs CSRF/session)
-#   Microsoft (S+)  - gcsservices host unreachable from CI probe
-#   Uber (S)        - loadSearchJobsResults returns 403 (bot protection)
 #   Qualcomm (S)    - Workday site name not yet identified (422)
 #   All Options     - endpoints not found
+#
+# SOLVED 2026-07-19 (browser network capture):
+#   Google -> server-rendered careers HTML, plain GET (fetch_google)
+#   Meta -> metacareers GraphQL replayed in-page for the lsd token (fetch_meta)
+#   Microsoft -> migrated to Eightfold "pcsx" API (fetch_pcsx)
+#   Uber -> loadSearchJobsResults accepts a dummy x-csrf-token (fetch_uber)
+#   Just Eat Takeaway, ABB -> Phenom /widgets API (fetch_phenom)
+#   Shell -> Workday tenant shell / site shellcareers
 #
 # SOLVED since this list was written (now in `companies` above):
 #   ASML  -> workday tenant asml, site ASMLEXT1
