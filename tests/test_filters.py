@@ -574,6 +574,45 @@ def test_google_extracts_id_and_title_from_result_slug():
         adapters._get_text = orig
 
 
+def test_drw_parses_next_data_and_builds_job_url():
+    """DRW embeds all jobs in the page's __NEXT_DATA__ blob under jobData.en;
+    a plain fetch + JSON parse must yield title, location, and a listings URL."""
+    next_data = json.dumps({"props": {"pageProps": {"jobData": {"en": [
+        {"id": 3481599, "title": "Software Developer Intern",
+         "slug": "software-developer-intern-3481599",
+         "locations": ["Amsterdam"], "career_countries": ["Netherlands"]},
+    ]}}}})
+    page_html = f'<script id="__NEXT_DATA__" type="application/json">{next_data}</script>'
+
+    def fake_get_text(url):
+        return page_html
+
+    orig = adapters._get_text
+    adapters._get_text = fake_get_text
+    try:
+        out = adapters.fetch_drw({})
+        assert len(out) == 1
+        assert out[0]["source_id"] == "3481599"
+        assert out[0]["title"] == "Software Developer Intern"
+        assert out[0]["location"] == "Amsterdam"
+        assert out[0]["url"] == ("https://www.drw.com/work-at-drw/listings/"
+                                 "software-developer-intern-3481599")
+    finally:
+        adapters._get_text = orig
+
+
+def test_drw_missing_next_data_raises_fetch_error():
+    orig = adapters._get_text
+    adapters._get_text = lambda url: "<html>no data here</html>"
+    try:
+        adapters.fetch_drw({})
+        raise AssertionError("expected FetchError")
+    except adapters.FetchError:
+        pass
+    finally:
+        adapters._get_text = orig
+
+
 RADANCY_ITEM_HTML = """
 <li class="search-results-item vacancy-item">
   <a href="/en/job/amsterdam/ai-finance-transformation-intern/3121/999" data-job-id="999">

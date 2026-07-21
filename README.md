@@ -5,10 +5,10 @@ Instead of scraping fragile career-page HTML, it reads the public JSON endpoints
 of the hiring platforms (ATS) those companies use — Greenhouse, Lever, Ashby,
 SmartRecruiters, Recruitee, Workday.
 
-Currently tracking **55 companies** across quant trading, big tech, big data/AI
+Currently tracking **57 companies** across quant trading, big tech, big data/AI
 platforms, fintech, banks, and more (see `config/companies.yaml`) — including
-Optiver, Google, Meta, Microsoft, Uber, Tesla, Booking.com, Shell, ING and Just
-Eat Takeaway, none of which use a standard ATS.
+Optiver, DRW, Google, Meta, Microsoft, Uber, Tesla, Booking.com, Shell, ING and
+Just Eat Takeaway, none of which use a standard ATS.
 
 Two of them — **Tesla** (Akamai bot protection) and **Meta** (a per-page token)
 — can only be reached from a real browser, so their adapters drive headless

@@ -57,6 +57,12 @@ MAX_GOOGLE_PAGES = 15
 # machine-readable title on the page.
 GOOGLE_LINK_RE = re.compile(r'jobs/results/(\d+)-([a-z0-9-]+)')
 
+# DRW's careers site is Next.js; every job is embedded in the page's
+# __NEXT_DATA__ blob (jobData.en), so a plain GET + JSON parse beats any
+# scraping. No third-party ATS is involved.
+DRW_NEXT_DATA_RE = re.compile(
+    r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+
 
 class FetchError(Exception):
     """Raised when a provider endpoint cannot be read."""
@@ -384,6 +390,30 @@ def fetch_google(cfg):
                 f"jobs/results/{jid}-{slug}"))
         if not new:
             break
+    return out
+
+
+def fetch_drw(cfg):
+    """DRW careers -- a Next.js site with every job in its __NEXT_DATA__ blob.
+
+    No third-party ATS: one plain GET of the listings page carries all jobs
+    under props.pageProps.jobData.en. jobData has no date field, so `posted`
+    is left empty. Job pages live at /work-at-drw/listings/<slug>.
+    """
+    html_text = _get_text("https://www.drw.com/work-at-drw/listings")
+    m = DRW_NEXT_DATA_RE.search(html_text)
+    if not m:
+        raise FetchError("drw: __NEXT_DATA__ not found")
+    try:
+        jobs = json.loads(m.group(1))["props"]["pageProps"]["jobData"]["en"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise FetchError(f"drw: unexpected page data shape: {exc}") from exc
+    out = []
+    for j in jobs:
+        slug = j.get("slug") or j.get("id")
+        loc = ", ".join(j.get("locations") or [])
+        out.append(_norm(j.get("id"), j.get("title"), loc,
+                         f"https://www.drw.com/work-at-drw/listings/{slug}"))
     return out
 
 
@@ -736,6 +766,7 @@ ADAPTERS = {
     "phenom": fetch_phenom,
     "meta": fetch_meta,
     "google": fetch_google,
+    "drw": fetch_drw,
 }
 
 

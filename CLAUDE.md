@@ -52,8 +52,9 @@ server-render their results, and only Tesla/Meta truly need a browser at
 run time (`_browser_eval`, headless Firefox — Chromium's headless/automation
 fingerprint gets flagged). `fetch_google` parses the job title out of the URL
 slug; `fetch_radancy` parses server-rendered HTML fragments (`RADANCY_ITEM_RE`)
-and must `html.unescape`. Phenom (`fetch_phenom`: JET, ABB) and pcsx share one
-adapter each across companies via config. The earlier bespoke ones:
+and must `html.unescape`; `fetch_drw` parses DRW's Next.js `__NEXT_DATA__` blob
+(same `_get_text` family as Google). Phenom (`fetch_phenom`: JET, ABB) and pcsx
+share one adapter each across companies via config. The earlier bespoke ones:
 **Optiver** (own API at `www.optiver.com/en/api/v1/jobs`, Elasticsearch-style
 `from`/`size` paging, `size` silently capped at 16 — the endpoint is named in
 the careers page HTML as `apiEndpoint`); **Booking.com** via the reusable

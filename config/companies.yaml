@@ -11,6 +11,9 @@ companies:
   - name: "Optiver"
     ats: optiver
     tier: "S++"
+  - name: "DRW"
+    ats: drw          # Next.js site; jobs embedded in __NEXT_DATA__
+    tier: "S++"
   - name: "Jump Trading"
     ats: greenhouse
     slug: jumptrading
@@ -139,6 +142,10 @@ companies:
   - name: "Nebius"
     ats: greenhouse
     slug: nebius
+    tier: "A"
+  - name: "Prosus"
+    ats: ashby        # Amsterdam-HQ'd; heavy AI/ML/LLM hiring
+    slug: prosus
     tier: "A"
 
   # ---- enterprise / SaaS / devtools ----
